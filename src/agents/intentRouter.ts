@@ -1,18 +1,30 @@
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { ChatAnthropic } from "@langchain/anthropic";
-import { StringOutputParser } from "@langchain/core/output_parsers";
+import * as z from "zod/v4";
+import { createChatModel } from "../model.js";
+
+const IntentResult = z.object({
+  intent: z
+    .enum(["data", "style"])
+    .describe("'data' to generate a new chart spec, 'style' to restyle an existing chart"),
+});
 
 // Define the prompt template for intent classification
 const prompt = ChatPromptTemplate.fromTemplate(
-  "Classify this prompt as 'data' or 'style':\n{prompt}\nIntent:"
+  [
+    "Classify the chart request below.",
+    "'data' = the user wants a new chart, or wants the underlying data/encodings changed.",
+    "'style' = the user only wants the appearance of an existing chart changed.",
+    "",
+    "Request: {prompt}",
+  ].join("\n")
 );
 
-// Initialize the LLM (Anthropic)
-const llm = new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" });
-const chain = prompt.pipe(llm).pipe(new StringOutputParser());
+// Structured output rather than parsing prose: a free-text reply like
+// "this is 'data', not 'style'" defeats any substring check.
+const chain = prompt.pipe(createChatModel().withStructuredOutput(IntentResult));
 
 // Export the intent classification function
 export async function classifyIntent(prompt: string): Promise<"data" | "style"> {
-  const intent = await chain.invoke({ prompt });
-  return intent.trim().toLowerCase() as "data" | "style";
+  const { intent } = await chain.invoke({ prompt });
+  return intent;
 }
