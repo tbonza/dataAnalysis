@@ -21,6 +21,7 @@ behaviour adapted from
 packages/mcp-server     the product — DuckDB + flint + skills. No LLM, no credentials.
 packages/agent-server   a deep agent whose only capability is the MCP tool.
 packages/web-client     chat UI that renders the returned specs inline.
+packages/demo           runs all three behind one port, for proxied environments.
 ```
 
 ## Requirements
@@ -88,6 +89,45 @@ If the agent server reports an expired token, refresh your credentials (e.g. `aw
 login`) **and restart the agent server** — it resolves credentials once at startup, so a
 running process keeps using the stale ones. `curl -s http://127.0.0.1:3001/health` shows
 which tools and skills it picked up from the MCP server.
+
+## Run it behind one port
+
+Three ports don't survive a network proxy that only exposes one address. `pnpm demo`
+puts everything behind a single port instead — one shell, no CORS:
+
+```bash
+pnpm demo     # → http://127.0.0.1:8080
+```
+
+It builds the chat client, starts the MCP and agent servers on loopback, waits for both
+to report healthy, and serves the built client with Vite's preview server proxying the
+rest:
+
+| Path | Goes to |
+|---|---|
+| `/` | the built chat client |
+| `/api/*` | the agent server (`/api/chat`, `/api/prompts`, `/api/datasets`, `/api/health`) |
+| `/mcp` | the MCP server |
+
+The client is built with `VITE_AGENT_URL=/api`, so its calls are relative and
+same-origin — there is no absolute `http://127.0.0.1:3001` baked in to be unreachable
+from wherever you're browsing. Only the one port listens externally; :3000 and :3001
+stay bound to loopback. Ctrl-C stops all three.
+
+To reach it from another host, bind it and name the hostname you'll use — Vite rejects
+a `Host` header it doesn't recognise, and so do the MCP server's DNS-rebinding guards:
+
+```bash
+DEMO_HOST=0.0.0.0 DEMO_ALLOWED_HOSTS=my-proxy.internal pnpm demo
+```
+
+`claude mcp add --transport http chart http://my-proxy.internal:8080/mcp` then works
+through the same address. Naming a host widens the allow-lists rather than disabling
+them: an unlisted `Host` or `Origin` still gets a 403.
+
+`pnpm demo` is for constrained environments, not for development — it serves a
+production build, so there's no hot reload. Keep using the three-shell setup above
+while editing the client.
 
 To drive the agent without the browser, `POST /chat` and read the SSE stream. Reuse a
 `threadId` across turns — that is what lets a follow-up restyle find the previous turn's
@@ -210,9 +250,21 @@ is a security regression: it asserts that `read_csv_auto('/etc/hosts')` is refus
 | `VITE_AGENT_URL` | `http://127.0.0.1:3001` | web-client |
 | `BEDROCK_MODEL_ID` | `us.anthropic.claude-sonnet-5` | agent-server |
 | `AWS_REGION` | `us-east-1` | agent-server |
+| `MCP_ALLOWED_HOSTS` | localhost only | mcp-server (DNS-rebinding guard) |
+| `MCP_ALLOWED_ORIGINS` | localhost only | mcp-server (DNS-rebinding guard) |
+| `DEMO_HOST` | `127.0.0.1` | demo — what the one port binds |
+| `DEMO_PORT` | `8080` | demo |
+| `DEMO_ALLOWED_HOSTS` | *(unset)* | demo — hostnames allowed to reach it, comma-separated |
+| `DEMO_MCP_PORT` | `3000` | demo — loopback port for the MCP child |
+| `DEMO_AGENT_PORT` | `3001` | demo — loopback port for the agent child |
+| `DEMO_SKIP_BUILD` | *(unset)* | demo — reuse the existing `dist/` |
 
 Credentials come from the default AWS provider chain — environment, SSO, profile, or
 instance role.
+
+`MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` add to the localhost defaults rather than
+replacing them, so the DNS-rebinding guards stay armed for everything not named.
+`pnpm demo` passes `DEMO_ALLOWED_HOSTS` through to both.
 
 ## How it works, and what it will not do
 

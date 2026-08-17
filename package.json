@@ -10,6 +10,7 @@
     "mcp": "pnpm --filter mcp-server start",
     "agent": "pnpm --filter agent-server start",
     "web": "pnpm --filter web-client dev",
+    "demo": "pnpm --filter demo start",
     "create-dataset": "pnpm --filter mcp-server create-dataset"
   },
   "keywords": [],

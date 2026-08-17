@@ -1,14 +1,12 @@
 import { createServer } from "node:http";
-import {
-  localhostHostValidation,
-  localhostOriginValidation,
-  toNodeHandler,
-} from "@modelcontextprotocol/node";
+import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
 import { buildChart, getChart, listChartTypes, listThemes } from "./chart.js";
 import {
+  ALLOWED_HOSTS,
+  ALLOWED_ORIGINS,
   HEALTH_PATH,
   HOST,
   MCP_PATH,
@@ -639,9 +637,10 @@ const handler = createMcpHandler(buildServer);
 const nodeHandler = toNodeHandler(handler);
 
 // The Hono and Express adapters arm these DNS-rebinding guards automatically;
-// on plain node:http they have to be wired in by hand.
-const validateHost = localhostHostValidation();
-const validateOrigin = localhostOriginValidation();
+// on plain node:http they have to be wired in by hand. The allow-lists are localhost
+// only unless MCP_ALLOWED_HOSTS / MCP_ALLOWED_ORIGINS name something else.
+const validateHost = hostHeaderValidation(ALLOWED_HOSTS);
+const validateOrigin = originValidation(ALLOWED_ORIGINS);
 
 const httpServer = createServer((req, res) => {
   if (!validateHost(req, res) || !validateOrigin(req, res)) return;
