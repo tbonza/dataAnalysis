@@ -140,15 +140,20 @@ while editing the client.
 
 To drive the agent without the browser, `POST /chat` and read the SSE stream. Reuse a
 `threadId` across turns — that is what lets a follow-up restyle find the previous turn's
-chart:
+chart. `role` is optional and does what the chip does in the browser; send it on every
+turn you want framed, since the server keeps no role of its own:
 
 ```bash
 curl -sN -X POST http://127.0.0.1:3001/chat -H 'content-type: application/json' \
-  -d '{"message":"East 200 revenue, West 250, North 90. Chart revenue by region.","threadId":"t1"}'
+  -d '{"message":"East 200 revenue, West 250, North 90. Chart revenue by region.","threadId":"t1","role":"Chief Financial Officer"}'
 
 curl -sN -X POST http://127.0.0.1:3001/chat -H 'content-type: application/json' \
   -d '{"message":"Make the bars green.","threadId":"t1"}'
 ```
+
+A `role` must be a display name the prompt library defines — `GET /prompts` lists them,
+and `"Chief Financial Officer"` is one where `"CFO"` is not. Anything else is dropped and
+the turn streams unframed, so a request never fails over a role the server doesn't know.
 
 Events are `{type: "text" | "tool" | "chart" | "report" | "error" | "done"}`; a `chart`
 event carries the `vlSpec` to render. History is in memory, so it resets when the process
@@ -238,8 +243,8 @@ prompt name.
 ## Tests and checks
 
 ```bash
-pnpm test        # 120 tests; needs no credentials
-pnpm typecheck   # all three packages
+pnpm test        # 133 tests across two suites; needs no credentials
+pnpm typecheck   # all four packages
 ```
 
 The suite covers query compilation and validation, the DuckDB round trip, chart-type
@@ -247,6 +252,12 @@ resolution and flint assembly, the `configUI` sanitizer's prototype-pollution gu
 skill compliance, and the dataset/job-role library's own integrity (asset↔reference
 pairing, prompt-name uniqueness, every prompt's dataset actually existing). One test
 is a security regression: it asserts that `read_csv_auto('/etc/hosts')` is refused.
+
+The agent server's own suite covers the one thing the browser can't show you without AWS
+credentials: how a `role` is handled. It checks that the name is trimmed and that
+newlines and over-long values are refused, that the allow-list is built from the prompt
+library's own role names, and that an unrecognised role produces an unframed answer
+rather than an error.
 
 ## Configuration
 
