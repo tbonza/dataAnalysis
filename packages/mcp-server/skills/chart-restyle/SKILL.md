@@ -36,14 +36,14 @@ and you are the check on it.
 
 ## The two steps
 
-**1. `prepare_restyle({ chart_id })`** returns:
+**1. `prepare_restyle({ chartId })`** returns:
 
-- `spec_without_data` — the compiled Vega-Lite spec with its `data` block removed.
-- `data_sample` — about ten rows of the data the chart actually embeds.
+- `specWithoutData` — the compiled Vega-Lite spec with its `data` block removed.
+- `dataSample` — about ten rows of the data the chart actually embeds.
 
-**2. `apply_restyle({ chart_id, vl_spec, config_ui? })`** takes your edited spec,
+**2. `apply_restyle({ chartId, vlSpec, configUI? })`** takes your edited spec,
 re-attaches the rows, and registers the result as a **new chart** with its own
-`chart_id`. The original stays addressable, so a report can still embed it.
+`chartId`. The original stays addressable, so a report can still embed it.
 
 ## Rules
 
@@ -69,11 +69,11 @@ type and transforms unless the user asked for them to change. The spec you were 
 already has considered layout, colour and formatting decisions in it; a wholesale
 rewrite discards them.
 
-**Read the sample before choosing formats.** The values in `data_sample` are what the
+**Read the sample before choosing formats.** The values in `dataSample` are what the
 chart embeds after temporal conversion — a year may appear as the string `"1980"`. An
 axis format chosen against a different assumption will not match what renders.
 
-## Follow-up controls (`config_ui`)
+## Follow-up controls (`configUI`)
 
 You may return 2–4 small controls that let the user keep adjusting *this* chart
 without another model call. A control is a **path** into the spec plus the values

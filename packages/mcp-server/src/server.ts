@@ -19,7 +19,16 @@ import {
 import { QuerySpec, compileQuery } from "./query.js";
 import { ReportRequest, createReport } from "./report.js";
 import { applyRestyle, prepareRestyle } from "./restyle.js";
-import { ChartSpec, SemanticTypeMap } from "./schemas.js";
+import {
+  ChartSpec,
+  ChartWarning,
+  ConfigControl,
+  DataRow,
+  DatasetColumnSchema,
+  SemanticTypeMap,
+  ValidationResult,
+  VegaLiteSpec,
+} from "./schemas.js";
 import { loadSkills } from "./skills.js";
 import { validateChart } from "./validate.js";
 
@@ -106,15 +115,15 @@ function buildServer(): McpServer {
         "Load inline rows as a queryable dataset and return its id, columns, and a per-field summary.",
       inputSchema: z.object({
         rows: z
-          .array(z.record(z.string(), z.unknown()))
+          .array(DataRow)
           .min(1)
           .describe("Array of row objects, all sharing the same keys."),
         name: z.string().optional().describe("A label for the dataset, used only in messages."),
       }),
       outputSchema: z.object({
-        dataset_id: z.string(),
-        columns: z.array(z.object({ name: z.string(), type: z.string() })),
-        row_count: z.number(),
+        datasetId: z.string(),
+        columns: z.array(DatasetColumnSchema),
+        rowCount: z.number(),
         summary: z.array(z.string()),
       }),
     },
@@ -124,9 +133,9 @@ function buildServer(): McpServer {
       return result(
         `Loaded ${dataset.rowCount} rows as ${dataset.id}.\n${summary.join("\n")}`,
         {
-          dataset_id: dataset.id,
+          datasetId: dataset.id,
           columns: dataset.columns,
-          row_count: dataset.rowCount,
+          rowCount: dataset.rowCount,
           summary,
         }
       );
@@ -140,28 +149,28 @@ function buildServer(): McpServer {
       description:
         "Field types, distinct-value samples, and example rows. Read the values before charting — " +
         "column names alone hide embedded totals, percent-vs-fraction units, and single-value breakdowns.",
-      inputSchema: z.object({ dataset_id: z.string() }),
+      inputSchema: z.object({ datasetId: z.string() }),
       outputSchema: z.object({
-        dataset_id: z.string(),
-        row_count: z.number(),
-        columns: z.array(z.object({ name: z.string(), type: z.string() })),
+        datasetId: z.string(),
+        rowCount: z.number(),
+        columns: z.array(DatasetColumnSchema),
         summary: z.array(z.string()),
-        sample_rows: z.array(z.record(z.string(), z.unknown())),
+        sampleRows: z.array(DataRow),
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ dataset_id }) => {
-      const dataset = getDataset(dataset_id);
+    async ({ datasetId }) => {
+      const dataset = getDataset(datasetId);
       const [summary, samples] = await Promise.all([
-        summarizeDataset(dataset_id),
-        sampleRows(dataset_id),
+        summarizeDataset(datasetId),
+        sampleRows(datasetId),
       ]);
       return result(`${dataset.name} (${dataset.rowCount} rows)\n${summary.join("\n")}`, {
-        dataset_id: dataset.id,
-        row_count: dataset.rowCount,
+        datasetId: dataset.id,
+        rowCount: dataset.rowCount,
         columns: dataset.columns,
         summary,
-        sample_rows: samples,
+        sampleRows: samples,
       });
     }
   );
@@ -175,32 +184,32 @@ function buildServer(): McpServer {
         "The result is registered as a new dataset, so chain queries for multi-step work. " +
         "See the data-query skill for the grammar.",
       inputSchema: z.object({
-        dataset_id: z.string(),
+        datasetId: z.string(),
         spec: QuerySpec,
       }),
       outputSchema: z.object({
-        dataset_id: z.string(),
-        source_dataset_id: z.string(),
-        columns: z.array(z.object({ name: z.string(), type: z.string() })),
-        row_count: z.number(),
-        preview_rows: z.array(z.record(z.string(), z.unknown())),
+        datasetId: z.string(),
+        sourceDatasetId: z.string(),
+        columns: z.array(DatasetColumnSchema),
+        rowCount: z.number(),
+        previewRows: z.array(DataRow),
         sql: z.string(),
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ dataset_id, spec }) => {
-      const source = getDataset(dataset_id);
+    async ({ datasetId, spec }) => {
+      const source = getDataset(datasetId);
       const { sql } = compileQuery(source, spec);
       const { rows, columns } = await execSql(sql);
       if (rows.length === 0) {
         // An empty result is nearly always a filter mistake, and charting it produces
         // a blank plot rather than an error, so say so here.
         return result(`Query returned 0 rows.\nSQL: ${sql}`, {
-          dataset_id,
-          source_dataset_id: dataset_id,
+          datasetId,
+          sourceDatasetId: datasetId,
           columns,
-          row_count: 0,
-          preview_rows: [],
+          rowCount: 0,
+          previewRows: [],
           sql,
         });
       }
@@ -208,11 +217,11 @@ function buildServer(): McpServer {
       return result(
         `${derived.rowCount} rows as ${derived.id} (${columns.map((c) => c.name).join(", ")}).\nSQL: ${sql}`,
         {
-          dataset_id: derived.id,
-          source_dataset_id: dataset_id,
+          datasetId: derived.id,
+          sourceDatasetId: datasetId,
           columns,
-          row_count: derived.rowCount,
-          preview_rows: rows.slice(0, 10),
+          rowCount: derived.rowCount,
+          previewRows: rows.slice(0, 10),
           sql,
         }
       );
@@ -225,15 +234,15 @@ function buildServer(): McpServer {
     {
       title: "Create Chart",
       description:
-        "Compile a chart spec into a Vega-Lite spec for the client to render. Returns a chart_id " +
+        "Compile a chart spec into a Vega-Lite spec for the client to render. Returns a chartId " +
         "usable by inspect_chart, prepare_restyle and create_report. See the chart-author skill.",
       inputSchema: z.object({
-        dataset_id: z.string(),
-        chart_spec: ChartSpec,
-        semantic_types: SemanticTypeMap.optional().describe(
+        datasetId: z.string(),
+        chartSpec: ChartSpec,
+        semanticTypes: SemanticTypeMap.optional().describe(
           'Field to semantic type, e.g. { revenue: "Amount" }. Drives formatting and colour choices.'
         ),
-        theme_spec: z
+        themeSpec: z
           .union([z.string(), z.record(z.string(), z.unknown())])
           .optional()
           .describe(
@@ -242,18 +251,18 @@ function buildServer(): McpServer {
           ),
       }),
       outputSchema: z.object({
-        chart_id: z.string(),
-        chart_type: z.string(),
-        vl_spec: z.record(z.string(), z.unknown()),
-        chart_spec: ChartSpec,
-        valid: z.boolean(),
-        errors: z.array(z.string()),
-        warnings: z.array(z.record(z.string(), z.unknown())),
+        chartId: z.string(),
+        chartType: z.string(),
+        vlSpec: VegaLiteSpec,
+        chartSpec: ChartSpec,
+        // Spread rather than nest: validation's three fields are returned flat here,
+        // and ValidationResult is the schema that defines them.
+        ...ValidationResult.shape,
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ dataset_id, chart_spec, semantic_types, theme_spec }) => {
-      const dataset = getDataset(dataset_id);
+    async ({ datasetId, chartSpec, semanticTypes, themeSpec }) => {
+      const dataset = getDataset(datasetId);
       const rows = await execSql(`SELECT * FROM "${dataset.table}"`);
       const columns = dataset.columns.map((c) => c.name);
 
@@ -264,11 +273,13 @@ function buildServer(): McpServer {
       let chart;
       try {
         chart = buildChart({
-          datasetId: dataset_id,
+          datasetId,
           rows: rows.rows,
-          chartSpec: chart_spec,
-          ...(semantic_types === undefined ? {} : { semanticTypes: semantic_types }),
-          ...(theme_spec === undefined ? {} : { themeSpec: theme_spec }),
+          chartSpec,
+          // Spread rather than pass `undefined`: `exactOptionalPropertyTypes` treats an
+          // explicit undefined as a different type from an absent key.
+          ...(semanticTypes === undefined ? {} : { semanticTypes }),
+          ...(themeSpec === undefined ? {} : { themeSpec }),
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -278,10 +289,10 @@ function buildServer(): McpServer {
         return {
           content: [{ type: "text" as const, text: errors[0]! }],
           structuredContent: {
-            chart_id: "",
-            chart_type: chart_spec.chartType,
-            vl_spec: {},
-            chart_spec,
+            chartId: "",
+            chartType: chartSpec.chartType,
+            vlSpec: {},
+            chartSpec,
             valid: false,
             errors,
             warnings: [],
@@ -300,10 +311,10 @@ function buildServer(): McpServer {
         `${chart.chartType} as ${chart.id}` +
           (validation.errors.length ? `\n${validation.errors.join("\n")}` : ""),
         {
-          chart_id: chart.id,
-          chart_type: chart.chartType,
-          vl_spec: chart.vlSpec,
-          chart_spec: chart.chartSpec,
+          chartId: chart.id,
+          chartType: chart.chartType,
+          vlSpec: chart.vlSpec,
+          chartSpec: chart.chartSpec,
           valid: validation.valid,
           errors: validation.errors,
           warnings: chart.warnings,
@@ -317,25 +328,25 @@ function buildServer(): McpServer {
     {
       title: "Inspect Chart",
       description: "The spec, chart type and warnings of a chart you already created.",
-      inputSchema: z.object({ chart_id: z.string() }),
+      inputSchema: z.object({ chartId: z.string() }),
       outputSchema: z.object({
-        chart_id: z.string(),
-        chart_type: z.string(),
-        chart_spec: ChartSpec,
-        dataset_id: z.string(),
-        vl_spec: z.record(z.string(), z.unknown()),
-        warnings: z.array(z.record(z.string(), z.unknown())),
+        chartId: z.string(),
+        chartType: z.string(),
+        chartSpec: ChartSpec,
+        datasetId: z.string(),
+        vlSpec: VegaLiteSpec,
+        warnings: z.array(ChartWarning),
       }),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ chart_id }) => {
-      const chart = getChart(chart_id);
+    async ({ chartId }) => {
+      const chart = getChart(chartId);
       return result(`${chart.chartType} (${chart.id})`, {
-        chart_id: chart.id,
-        chart_type: chart.chartType,
-        chart_spec: chart.chartSpec,
-        dataset_id: chart.datasetId,
-        vl_spec: chart.vlSpec,
+        chartId: chart.id,
+        chartType: chart.chartType,
+        chartSpec: chart.chartSpec,
+        datasetId: chart.datasetId,
+        vlSpec: chart.vlSpec,
         warnings: chart.warnings,
       });
     }
@@ -348,14 +359,14 @@ function buildServer(): McpServer {
       description: "Every chart type and its encoding channels.",
       inputSchema: z.object({}),
       outputSchema: z.object({
-        chart_types: z.array(z.object({ chartType: z.string(), channels: z.array(z.string()) })),
+        chartTypes: z.array(z.object({ chartType: z.string(), channels: z.array(z.string()) })),
       }),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async () => {
       const types = listChartTypes();
       return result(types.map((t) => `${t.chartType}: ${t.channels.join(", ")}`).join("\n"), {
-        chart_types: types,
+        chartTypes: types,
       });
     }
   );
@@ -365,7 +376,7 @@ function buildServer(): McpServer {
     {
       title: "List Themes",
       description:
-        "Visual theme presets for create_chart's theme_spec. Prefer a preset id; extend one only " +
+        "Visual theme presets for create_chart's themeSpec. Prefer a preset id; extend one only " +
         "when the user asks for a specific look. See the theme-author skill.",
       inputSchema: z.object({}),
       outputSchema: z.object({
@@ -389,24 +400,24 @@ function buildServer(): McpServer {
       description:
         "The chart's Vega-Lite spec with its data removed, plus a sample of the rows it embeds. " +
         "Edit the spec and pass it to apply_restyle. See the chart-restyle skill.",
-      inputSchema: z.object({ chart_id: z.string() }),
+      inputSchema: z.object({ chartId: z.string() }),
       outputSchema: z.object({
-        chart_id: z.string(),
-        chart_type: z.string(),
-        spec_without_data: z.record(z.string(), z.unknown()),
-        data_sample: z.array(z.record(z.string(), z.unknown())),
+        chartId: z.string(),
+        chartType: z.string(),
+        specWithoutData: VegaLiteSpec,
+        dataSample: z.array(DataRow),
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ chart_id }) => {
-      const prepared = prepareRestyle(chart_id);
+    async ({ chartId }) => {
+      const prepared = prepareRestyle(chartId);
       return result(
         `${prepared.chartType} (${prepared.chartId}); do not include a data block in your edit.`,
         {
-          chart_id: prepared.chartId,
-          chart_type: prepared.chartType,
-          spec_without_data: prepared.specWithoutData,
-          data_sample: prepared.dataSample,
+          chartId: prepared.chartId,
+          chartType: prepared.chartType,
+          specWithoutData: prepared.specWithoutData,
+          dataSample: prepared.dataSample,
         }
       );
     }
@@ -420,34 +431,38 @@ function buildServer(): McpServer {
         "Re-attach the chart's rows to your edited spec and register it as a new chart variant. " +
         "Optionally supply configUI controls for follow-up tweaks without another model call.",
       inputSchema: z.object({
-        chart_id: z.string(),
-        vl_spec: z.record(z.string(), z.unknown()).describe("Your edited spec, with no data block."),
-        config_ui: z
-          .array(z.record(z.string(), z.unknown()))
+        chartId: z.string(),
+        vlSpec: VegaLiteSpec.describe("Your edited spec, with no data block."),
+        // Validated against the real control shape rather than accepted as opaque
+        // records: a malformed control is then a schema error the agent can repair,
+        // instead of being silently dropped by sanitizeConfigUI. That sanitizer still
+        // runs — it enforces the path-traversal rules zod cannot express.
+        configUI: z
+          .array(ConfigControl)
           .optional()
           .describe("2-4 follow-up controls; each is a path into the spec plus allowed values."),
       }),
       outputSchema: z.object({
-        chart_id: z.string(),
-        vl_spec: z.record(z.string(), z.unknown()),
-        config_ui: z.array(z.record(z.string(), z.unknown())),
+        chartId: z.string(),
+        vlSpec: VegaLiteSpec,
+        configUI: z.array(ConfigControl),
         warnings: z.array(z.string()),
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ chart_id, vl_spec, config_ui }) => {
+    async ({ chartId, vlSpec, configUI }) => {
       const restyled = applyRestyle({
-        chartId: chart_id,
-        vlSpec: vl_spec,
-        ...(config_ui === undefined ? {} : { configUI: config_ui }),
+        chartId,
+        vlSpec,
+        ...(configUI === undefined ? {} : { configUI }),
       });
       return result(
         `Restyled as ${restyled.chartId}` +
           (restyled.warnings.length ? `\n${restyled.warnings.join("\n")}` : ""),
         {
-          chart_id: restyled.chartId,
-          vl_spec: restyled.vlSpec,
-          config_ui: restyled.configUI,
+          chartId: restyled.chartId,
+          vlSpec: restyled.vlSpec,
+          configUI: restyled.configUI,
           warnings: restyled.warnings,
         }
       );
@@ -461,7 +476,7 @@ function buildServer(): McpServer {
       title: "Create Report",
       description:
         "Assemble your prose and existing charts into one Markdown document. Charts are embedded by " +
-        "chart_id rather than recreated. See the report skill.",
+        "chartId rather than recreated. See the report skill.",
       inputSchema: ReportRequest,
       outputSchema: z.object({
         title: z.string(),
@@ -470,7 +485,7 @@ function buildServer(): McpServer {
           z.object({
             chartId: z.string(),
             chartType: z.string(),
-            vlSpec: z.record(z.string(), z.unknown()),
+            vlSpec: VegaLiteSpec,
           })
         ),
       }),

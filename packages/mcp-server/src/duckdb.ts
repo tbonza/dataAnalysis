@@ -1,6 +1,16 @@
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import * as duckdb from "@duckdb/duckdb-wasm/blocking";
+import {
+  DATASET_ID_LENGTH,
+  DATASET_ID_PREFIX,
+  DEFAULT_DATASET_LABEL,
+  DEFAULT_SAMPLE_ROWS,
+  SUMMARY_SAMPLE_SIZE,
+  TABLE_LABEL_MAX_LENGTH,
+  TABLE_NAME_PREFIX,
+  TABLE_SUFFIX_LENGTH,
+} from "./constants.js";
 
 /** A column as DuckDB reports it back through Arrow. */
 export interface DatasetColumn {
@@ -18,9 +28,6 @@ export interface Dataset {
   columns: DatasetColumn[];
   rowCount: number;
 }
-
-/** Ceiling on rows returned to a caller, so a wide join can't embed a whole table in a spec. */
-export const MAX_RESULT_ROWS = 5000;
 
 type Connection = ReturnType<duckdb.DuckDBBindings["connect"]>;
 type QueryResult = ReturnType<Connection["query"]>;
@@ -95,8 +102,9 @@ function tableNameFor(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
-    .slice(0, 40);
-  return `ds_${base || "data"}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+    .slice(0, TABLE_LABEL_MAX_LENGTH);
+  const suffix = randomUUID().replace(/-/g, "").slice(0, TABLE_SUFFIX_LENGTH);
+  return `${TABLE_NAME_PREFIX}${base || DEFAULT_DATASET_LABEL}_${suffix}`;
 }
 
 function columnsOf(result: QueryResult): DatasetColumn[] {
@@ -133,11 +141,11 @@ function rowsOf(result: QueryResult): Array<Record<string, unknown>> {
 /** Load inline rows as a queryable table and return its handle. */
 export async function loadDataset(
   rows: Array<Record<string, unknown>>,
-  name = "data"
+  name = DEFAULT_DATASET_LABEL
 ): Promise<Dataset> {
   if (rows.length === 0) throw new Error("Cannot load an empty dataset: `rows` has no entries.");
 
-  const id = `ds-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const id = `${DATASET_ID_PREFIX}${randomUUID().replace(/-/g, "").slice(0, DATASET_ID_LENGTH)}`;
   const table = tableNameFor(name);
   const handle = `${table}.json`;
 
@@ -167,7 +175,7 @@ export function getDataset(id: string): Dataset {
   if (found) return found;
   const known = [...datasets.keys()];
   throw new Error(
-    `Unknown dataset_id "${id}". ` +
+    `Unknown datasetId "${id}". ` +
       (known.length ? `Loaded datasets: ${known.join(", ")}.` : "No datasets have been loaded yet.")
   );
 }

@@ -1,7 +1,7 @@
 ---
 name: theme-author
 description: >-
-  How to give charts a consistent visual identity with create_chart's theme_spec —
+  How to give charts a consistent visual identity with create_chart's themeSpec —
   choosing one of the shipped presets, or extending a preset with a small set of
   overrides drawn from brand guidelines. Use when the user asks for a particular look,
   mentions a house style or brand, wants charts to match a deck or publication, or
@@ -14,7 +14,7 @@ metadata:
 
 # Theming charts
 
-`theme_spec` on `create_chart` sets the visual system: ink, type, structure, mark
+`themeSpec` on `create_chart` sets the visual system: ink, type, structure, mark
 styling, legend and label policy. It is stated without naming any channel or field, so
 the same theme applies to every chart and the same chart accepts any theme.
 
@@ -26,7 +26,7 @@ Almost always the right answer. Call `list_themes` for ids and descriptions, the
 the id:
 
 ```json
-{ "dataset_id": "ds-…", "chart_spec": { … }, "theme_spec": "economist" }
+{ "datasetId": "ds-…", "chartSpec": { … }, "themeSpec": "economist" }
 ```
 
 The shipped presets are publication and product visual systems rather than colour
@@ -59,7 +59,7 @@ preset and override only what they specified:
 
 ```json
 {
-  "theme_spec": {
+  "themeSpec": {
     "extends": "datawrapper",
     "id": "acme",
     "label": "Acme",
@@ -106,6 +106,6 @@ Anything you cannot ground in the material, leave to the preset.
 A theme is the **system**: it applies to every chart and survives regeneration. A
 restyle is a **one-off** edit to a single chart's compiled output.
 
-Use `theme_spec` when the user wants a look for their charts. Use the **chart-restyle**
+Use `themeSpec` when the user wants a look for their charts. Use the **chart-restyle**
 skill when they want this particular chart adjusted. If you find yourself restyling
 several charts the same way, that is a theme.

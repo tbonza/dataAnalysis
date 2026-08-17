@@ -96,7 +96,7 @@ describe("buildChart", () => {
   });
 
   it("throws with a known id when a chart is missing", () => {
-    assert.throws(() => getChart("chart-nope"), /Unknown chart_id "chart-nope"/);
+    assert.throws(() => getChart("chart-nope"), /Unknown chartId "chart-nope"/);
   });
 });
 

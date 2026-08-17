@@ -33,15 +33,15 @@ Two references hold the detail:
 
 ```json
 {
-  "dataset_id": "ds-…",
-  "chart_spec": {
+  "datasetId": "ds-…",
+  "chartSpec": {
     "chartType": "Bar Chart",
     "title": "West leads on revenue",
     "subtitle": "Revenue by region, all products, 2024, USD",
     "encodings": { "x": "region", "y": "total_revenue" },
     "chartProperties": {}
   },
-  "semantic_types": { "region": "Region", "total_revenue": "Amount" }
+  "semanticTypes": { "region": "Region", "total_revenue": "Amount" }
 }
 ```
 
@@ -61,7 +61,7 @@ returns the machine-readable catalog with each type's channels.
 Short names work: `bar`, `line`, `scatter`, `pie`, `heatmap`, `histogram`, `boxplot`,
 `area`, `regression`, `grouped_bar`, `lollipop`, `waterfall`, `candlestick`,
 `world_map`, `us_map`. An unrecognised name silently becomes a scatter plot, so check
-the returned `chart_type` if you used something unusual.
+the returned `chartType` if you used something unusual.
 
 ## Step 2 — map fields to channels
 
@@ -95,7 +95,7 @@ filter or derive on the aggregate.
 
 ## Step 3 — annotate semantic types
 
-`semantic_types` maps a column to what it *means*, not to a data type:
+`semanticTypes` maps a column to what it *means*, not to a data type:
 
 ```json
 { "revenue": "Amount", "month": "Month", "country": "Country", "score": "Score" }
@@ -176,7 +176,7 @@ Before sending:
 - Does every field in `encodings` exist in the dataset? (`inspect_dataset` if unsure.)
 - Are all the channels ones this chart type has?
 - Is there a `title` stating the finding?
-- Are the encoded fields annotated in `semantic_types`?
+- Are the encoded fields annotated in `semanticTypes`?
 - If the query already aggregated, are the channels free of `aggregate`?
 
 After sending, read the response: `valid`, `errors`, and `warnings`. An error names
@@ -193,7 +193,7 @@ reading but do not mean the chart failed.
   "subtitle": "Revenue by region, all products, 2024, USD",
   "encodings": { "x": "region", "y": "total_revenue" } }
 ```
-with `semantic_types` `{ "region": "Region", "total_revenue": "Amount" }`.
+with `semanticTypes` `{ "region": "Region", "total_revenue": "Amount" }`.
 
 **Aggregating on the channel instead of in a query:**
 
@@ -210,7 +210,7 @@ with `semantic_types` `{ "region": "Region", "total_revenue": "Amount" }`.
   "title": "Profit tracked revenue until Q3",
   "encodings": { "x": "month", "y": ["revenue", "profit"] } }
 ```
-with `semantic_types` `{ "month": "Month", "revenue": "Amount", "profit": "Profit" }`.
+with `semanticTypes` `{ "month": "Month", "revenue": "Amount", "profit": "Profit" }`.
 
 **A donut, where the wedge value goes on `size`:**
 

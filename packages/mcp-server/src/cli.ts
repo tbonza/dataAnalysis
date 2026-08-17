@@ -52,13 +52,13 @@ async function main(): Promise<void> {
 
     section("1. load_data");
     const loaded = await call("load_data", { rows: ROWS, name: "sales" });
-    const datasetId = String(loaded["dataset_id"]);
-    console.log(`${datasetId} — ${String(loaded["row_count"])} rows`);
+    const datasetId = String(loaded["datasetId"]);
+    console.log(`${datasetId} — ${String(loaded["rowCount"])} rows`);
     for (const line of loaded["summary"] as string[]) console.log(`  ${line}`);
 
     section("2. query — revenue per region, plus a computed unit price");
     const queried = await call("query", {
-      dataset_id: datasetId,
+      datasetId,
       spec: {
         compute: [{ as: "unit_price", left: "revenue", op: "/", right: "units" }],
         groupBy: ["region"],
@@ -70,44 +70,44 @@ async function main(): Promise<void> {
       },
     });
     console.log("SQL:", queried["sql"]);
-    console.log("rows:", JSON.stringify(queried["preview_rows"]));
+    console.log("rows:", JSON.stringify(queried["previewRows"]));
 
     section("3. create_chart on the query result");
     const chart = await call("create_chart", {
-      dataset_id: queried["dataset_id"],
-      chart_spec: {
+      datasetId: queried["datasetId"],
+      chartSpec: {
         chartType: "bar",
         title: "West leads on total revenue",
         subtitle: "Revenue by region, all products, USD",
         encodings: { x: "region", y: "total_revenue" },
       },
-      semantic_types: { region: "Region", total_revenue: "Amount" },
+      semanticTypes: { region: "Region", total_revenue: "Amount" },
     });
-    const chartId = String(chart["chart_id"]);
-    console.log(`${chartId} — ${String(chart["chart_type"])}, valid=${String(chart["valid"])}`);
-    const vlSpec = chart["vl_spec"] as Record<string, unknown>;
+    const chartId = String(chart["chartId"]);
+    console.log(`${chartId} — ${String(chart["chartType"])}, valid=${String(chart["valid"])}`);
+    const vlSpec = chart["vlSpec"] as Record<string, unknown>;
     console.log("mark:", JSON.stringify(vlSpec["mark"]), "encoding:", Object.keys((vlSpec["encoding"] ?? {}) as object).join(","));
 
     section("4. prepare_restyle / apply_restyle");
-    const prepared = await call("prepare_restyle", { chart_id: chartId });
-    const stripped = prepared["spec_without_data"] as Record<string, unknown>;
+    const prepared = await call("prepare_restyle", { chartId: chartId });
+    const stripped = prepared["specWithoutData"] as Record<string, unknown>;
     console.log("data stripped:", !("data" in stripped));
-    console.log("sample:", JSON.stringify((prepared["data_sample"] as unknown[]).slice(0, 2)));
+    console.log("sample:", JSON.stringify((prepared["dataSample"] as unknown[]).slice(0, 2)));
 
     // Stand in for what a model would author: recolour without touching the encodings.
     const edited = { ...stripped, mark: { type: "bar", color: "green" } };
     const restyled = await call("apply_restyle", {
-      chart_id: chartId,
-      vl_spec: edited,
-      config_ui: [
+      chartId,
+      vlSpec: edited,
+      configUI: [
         { key: "opacity", label: "opacity", path: ["mark", "opacity"], type: "continuous", min: 0.1, max: 1, step: 0.1, defaultValue: 1 },
         { key: "bad", label: "unsafe", path: ["__proto__", "x"], type: "binary", defaultValue: true },
       ],
     });
-    console.log(`variant ${String(restyled["chart_id"])}`);
-    console.log("controls kept:", JSON.stringify((restyled["config_ui"] as Array<{ key: string }>).map((c) => c.key)));
+    console.log(`variant ${String(restyled["chartId"])}`);
+    console.log("controls kept:", JSON.stringify((restyled["configUI"] as Array<{ key: string }>).map((c) => c.key)));
     console.log("warnings:", JSON.stringify(restyled["warnings"]));
-    console.log("data re-attached:", "data" in (restyled["vl_spec"] as Record<string, unknown>));
+    console.log("data re-attached:", "data" in (restyled["vlSpec"] as Record<string, unknown>));
 
     section("5. create_report embedding the chart by id");
     const report = await call("create_report", {
@@ -120,8 +120,8 @@ async function main(): Promise<void> {
 
     section("6. Repairable errors (what a consuming agent relies on)");
     for (const [label, args] of [
-      ["unknown column", { dataset_id: datasetId, spec: { select: ["revenue", "profit"] } }],
-      ["ungrouped select", { dataset_id: datasetId, spec: { select: ["region", "product"], groupBy: ["region"], aggregate: [{ op: "sum", column: "revenue", as: "t" }] } }],
+      ["unknown column", { datasetId, spec: { select: ["revenue", "profit"] } }],
+      ["ungrouped select", { datasetId, spec: { select: ["region", "product"], groupBy: ["region"], aggregate: [{ op: "sum", column: "revenue", as: "t" }] } }],
     ] as const) {
       try {
         await call("query", args as Record<string, unknown>);

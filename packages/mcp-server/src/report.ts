@@ -5,7 +5,7 @@ import { getChart } from "./chart.js";
  * Assemble a report from prose the agent wrote and charts it already made.
  *
  * The prose is the agent's job — this server has no LLM. What it contributes is
- * resolving `chart_id` references into renderable specs, which is what lets a report
+ * resolving `chartId` references into renderable specs, which is what lets a report
  * embed existing charts by id instead of recreating them (data-formulator's report
  * skill works the same way).
  */

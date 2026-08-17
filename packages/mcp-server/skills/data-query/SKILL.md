@@ -32,7 +32,7 @@ for most questions.
 
 ```json
 {
-  "dataset_id": "ds-…",
+  "datasetId": "ds-…",
   "spec": {
     "compute":   [{ "as": "unit_price", "left": "revenue", "op": "/", "right": "units" }],
     "where":     [{ "column": "region", "operator": "IN", "value": ["East", "West"] }],
@@ -72,7 +72,7 @@ one step; see chaining below.
 
 ## Chaining: multi-step work
 
-Each result is registered as a new dataset with its own `dataset_id`. Query that, and
+Each result is registered as a new dataset with its own `datasetId`. Query that, and
 you have a second step. This is how anything genuinely sequential gets done:
 
 1. `query` — group by region, `sum(revenue) as total_revenue`, `sum(units) as total_units`.
@@ -124,6 +124,6 @@ Say so plainly rather than approximating:
 ## Reading the result
 
 The result includes the `sql` that ran. When a chart looks wrong, read it — it is
-usually faster than re-deriving your intent. A `row_count` of 0 means a filter
+usually faster than re-deriving your intent. A `rowCount` of 0 means a filter
 excluded everything; charting it yields a blank plot rather than an error, so fix the
 filter first.

@@ -5,6 +5,32 @@ import * as z from "zod/v4";
  * flint is the source of truth for this shape — we validate rather than redefine.
  */
 
+/**
+ * A column as DuckDB reports it back through Arrow — the zod twin of `DatasetColumn`
+ * in duckdb.ts. Declared once here because three tools return it, and two tools
+ * returning "columns" in different shapes is exactly the drift this prevents.
+ */
+export const DatasetColumnSchema = z.object({
+  name: z.string(),
+  type: z.string().describe('Arrow type name, e.g. "Utf8", "Int32", "Double".'),
+});
+
+/**
+ * One row of tabular data. Keys are the caller's column names, so the contents are
+ * open by nature; naming it keeps the four places that pass rows around from each
+ * describing the same thing differently.
+ */
+export const DataRow = z.record(z.string(), z.unknown());
+
+/**
+ * A compiled Vega-Lite specification. Deliberately unvalidated as to contents —
+ * flint owns that vocabulary — but named, so a consuming agent reading the tool
+ * schemas sees what the object is rather than an anonymous record.
+ */
+export const VegaLiteSpec = z
+  .record(z.string(), z.unknown())
+  .describe("A Vega-Lite spec, ready to render. The client rasterizes; no server does.");
+
 /** A channel encoding. A bare string is flint's shorthand for `{ field: "name" }`. */
 const ChartEncoding = z.object({
   field: z.string().optional(),

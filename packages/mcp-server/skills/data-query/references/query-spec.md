@@ -106,16 +106,16 @@ For a top-N list, combine `orderBy` with `limit`.
 
 ```
 {
-  dataset_id        the result, queryable and chartable in its own right
-  source_dataset_id what it came from
-  columns           name and type per output column
-  row_count
-  preview_rows      first 10 rows
-  sql               the statement that ran
+  datasetId        the result, queryable and chartable in its own right
+  sourceDatasetId  what it came from
+  columns          name and type per output column
+  rowCount
+  previewRows      first 10 rows
+  sql              the statement that ran
 }
 ```
 
-A `row_count` of 0 means the filters excluded everything — the result is still
+A `rowCount` of 0 means the filters excluded everything — the result is still
 registered, and charting it draws an empty plot, so fix the filter instead.
 
 ## Errors

@@ -19,7 +19,7 @@ that makes them mean something.
 
 ## Embed, don't rebuild
 
-Every chart you created has a `chart_id`. `create_report` takes those ids and resolves
+Every chart you created has a `chartId`. `create_report` takes those ids and resolves
 them into renderable specs. **Do not re-create a chart you already made** — you will
 spend a step and may produce a subtly different chart than the one you described.
 
@@ -27,7 +27,7 @@ If charts already exist when the user asks for a write-up, go straight to the re
 Only create a new chart first if the narrative genuinely needs one that isn't there,
 and then only one or two.
 
-`inspect_chart({ chart_id })` reminds you what a chart shows if you have lost track.
+`inspect_chart({ chartId })` reminds you what a chart shows if you have lost track.
 
 ## The shape
 

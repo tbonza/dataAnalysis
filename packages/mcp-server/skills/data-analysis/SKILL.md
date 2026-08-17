@@ -43,8 +43,9 @@ the chart shows them.
 
 ## Before you chart: read the values
 
-`load_data` and `inspect_dataset` both return a per-field summary with distinct
-values. Read it. Column names hide problems that make a chart quietly wrong:
+`load_data` and `inspect_dataset` both return a per-field `summary` with distinct
+values, and `inspect_dataset` adds `sampleRows` — whole rows as they actually are.
+Read them. Column names hide problems that make a chart quietly wrong:
 
 - **Embedded totals.** A category column may mix an aggregate level with its parts —
   an `All regions` row beside `East`/`West`, or a `Total` product. Charting both
@@ -85,7 +86,7 @@ Treat five charts as a ceiling, not a target.
 ## Styling versus data
 
 A request to change a chart's **appearance** — colours, labels, ordering, a theme —
-is a restyle: use **chart-restyle** on the existing `chart_id`. Do not rebuild the
+is a restyle: use **chart-restyle** on the existing `chartId`. Do not rebuild the
 chart from data.
 
 A request that changes **what is measured or shown** — a different field, a filter, a
@@ -96,11 +97,11 @@ express anything; a restyle cannot.
 
 ## Working with results
 
-Every `query` result becomes a dataset in its own right, with its own `dataset_id`.
+Every `query` result becomes a dataset in its own right, with its own `datasetId`.
 That is how multi-step work happens: query, then query the result, then chart it. Use
 the returned `sql` to check that the spec you wrote says what you meant.
 
-Every `create_chart` result has a `chart_id`. Keep the ids — restyling and reporting
+Every `create_chart` result has a `chartId`. Keep the ids — restyling and reporting
 both take them, and rebuilding a chart you already have wastes a step and risks
 producing a different one.
 

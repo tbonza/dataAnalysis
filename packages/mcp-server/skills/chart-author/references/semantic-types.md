@@ -1,6 +1,6 @@
 # Semantic types
 
-`semantic_types` maps a column to what it **means**. These are not Vega-Lite data
+`semanticTypes` maps a column to what it **means**. These are not Vega-Lite data
 types — `quantitative`, `nominal`, `ordinal` and `temporal` are derived from these for
 you. Annotating a field drives its number formatting, colour scheme, whether its axis
 includes zero, tick behaviour, and sort order.

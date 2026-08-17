@@ -80,7 +80,7 @@ export function getChart(id: string): Chart {
   if (found) return found;
   const known = [...charts.keys()];
   throw new Error(
-    `Unknown chart_id "${id}". ` +
+    `Unknown chartId "${id}". ` +
       (known.length ? `Known charts: ${known.join(", ")}.` : "No charts have been created yet.")
   );
 }
@@ -104,7 +104,7 @@ export interface BuildChartArgs {
   themeSpec?: string | Record<string, unknown>;
 }
 
-/** flint's shipped visual systems, for the `theme_spec` argument. */
+/** flint's shipped visual systems, for the `themeSpec` argument. */
 export function listThemes(): Array<{ id: string; label: string; description?: string }> {
   return listThemePresets() as Array<{ id: string; label: string; description?: string }>;
 }

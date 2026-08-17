@@ -55,6 +55,9 @@ export {
   ChartSpec,
   ChartWarning,
   ConfigControl,
+  DataRow,
+  DatasetColumnSchema,
   SemanticTypeMap,
   ValidationResult,
+  VegaLiteSpec,
 } from "./schemas.js";

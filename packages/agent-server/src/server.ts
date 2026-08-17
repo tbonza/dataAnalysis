@@ -38,12 +38,12 @@ function chartEventsFrom(content: unknown): Event[] {
       return;
     }
     const record = value as Record<string, unknown>;
-    const spec = record["vl_spec"] ?? record["vlSpec"];
+    const spec = record["vlSpec"];
     if (spec && typeof spec === "object" && Object.keys(spec).length > 0) {
       events.push({
         type: "chart",
-        chartId: String(record["chart_id"] ?? record["chartId"] ?? ""),
-        ...(typeof record["chart_type"] === "string" ? { chartType: record["chart_type"] } : {}),
+        chartId: String(record["chartId"] ?? ""),
+        ...(typeof record["chartType"] === "string" ? { chartType: record["chartType"] } : {}),
         vlSpec: spec as Record<string, unknown>,
       });
     }
