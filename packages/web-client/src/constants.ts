@@ -19,8 +19,13 @@ export const COMPOSER_PLACEHOLDER = "Ask a question about the data…";
 
 export const DATA_READY_LABEL = "Data ready:";
 
-/** Heads the role list in both places it appears: the empty state and the drawer. */
+/** Heads the role choice in both places it appears: the empty state and the drawer. */
 export const ROLE_HEADING = "Who's asking?";
+
+/** The picker's "no role" option. Selecting it is the same as clearing the chip: the
+ *  agent answers plainly rather than framing for a persona. */
+export const ROLE_ANY_LABEL = "Anyone";
+export const ROLE_PICK_HINT = "Pick a role to see its suggested questions.";
 
 /** The composer chip, which is the only way into the drawer. Its label is state: with no
  *  role it offers the destination, with one it reports the choice. */

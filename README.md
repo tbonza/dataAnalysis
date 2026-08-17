@@ -79,9 +79,11 @@ for the next question and nothing else.
 
 The role rides on the composer as a chip, which is also the only way into the left
 flyout: click it (or the *Suggested questions* it shows before you've chosen a role)
-and every role opens out with a one-line brief and its suggested questions written in
-full. Click a question and its text fills the composer, editable — nothing sends until
-you press Enter or Send. Type your own question instead if you prefer.
+and a dropdown scopes the panel to one role — its one-line brief and its suggested
+questions written out in full. Click a question and its text fills the composer,
+editable — nothing sends until you press Enter or Send. The pills, the dropdown and
+the chip are the same setting, so changing any one of them moves the other two. Type
+your own question instead if you prefer.
 
 Whatever the chip shows is sent with the message, so the agent frames its answer the
 way that executive wants it — a CFO gets the margin read, a CEO gets the one-sentence
