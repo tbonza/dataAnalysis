@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chart } from "./Chart.js";
 import {
   AGENT_URL,
@@ -7,13 +7,14 @@ import {
   CHAT_PATH,
   COMPOSER_PLACEHOLDER,
   DATA_READY_LABEL,
-  DRAWER_BUTTON_LABEL,
-  EMPTY_LOG_LEAD,
-  EMPTY_LOG_LINK,
+  ROLE_CHIP_EMPTY,
+  ROLE_CHIP_LEAD,
+  ROLE_CLEAR_LABEL,
+  ROLE_HEADING,
   WORKING_LABEL,
   trailSummary,
 } from "./constants.js";
-import { fetchLibrary, type DatasetGroup } from "./library.js";
+import { fetchLibrary, rolesAcross, type DatasetGroup } from "./library.js";
 import { RolesDrawer } from "./RolesDrawer.js";
 
 /** The event shapes the agent server streams over SSE. */
@@ -78,6 +79,9 @@ export function App(): React.ReactElement {
   const [busy, setBusy] = useState(false);
   const [library, setLibrary] = useState<DatasetGroup[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The role the next message is asked as, by slug; "" means none, which is the default —
+  // `job-roles` only applies a persona when the user names one.
+  const [roleSlug, setRoleSlug] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   // One thread for the page's lifetime, so a follow-up like "make the bars green" can
@@ -95,6 +99,9 @@ export function App(): React.ReactElement {
     };
   }, []);
 
+  const roles = useMemo(() => rolesAcross(library), [library]);
+  const role = roles.find((view) => view.roleSlug === roleSlug);
+
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
@@ -102,8 +109,9 @@ export function App(): React.ReactElement {
   // textarea so the user can send as-is or adjust it first. The drawer has already
   // closed itself (and restored focus to its opener) by the time this runs, so the
   // synchronous focus call here is the one that sticks.
-  const pickPrompt = useCallback((text: string) => {
+  const pickPrompt = useCallback((text: string, picked: string) => {
     setDraft(text);
+    setRoleSlug(picked);
     setDrawerOpen(false);
     textarea.current?.focus();
   }, []);
@@ -136,7 +144,13 @@ export function App(): React.ReactElement {
       const response = await fetch(`${AGENT_URL}${CHAT_PATH}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message, threadId: threadId.current }),
+        body: JSON.stringify({
+          message,
+          threadId: threadId.current,
+          // Sent every turn: the server holds no role state, and the chip is what the
+          // user can see, so what it shows is what the turn is asked as.
+          ...(role ? { role: role.role } : {}),
+        }),
       });
       if (!response.body) throw new Error("The agent server returned no stream.");
 
@@ -174,16 +188,13 @@ export function App(): React.ReactElement {
     } finally {
       setBusy(false);
     }
-  }, [appendPart, busy, draft]);
+  }, [appendPart, busy, draft, role]);
 
   const lastStep = busy ? lastStepOf(turns) : undefined;
 
   return (
     <div className="app">
       <header>
-        <button type="button" className="ghost" onClick={openDrawer} aria-haspopup="dialog">
-          {DRAWER_BUTTON_LABEL}
-        </button>
         <strong>{APP_TITLE}</strong>
         <span>{APP_TAGLINE}</span>
       </header>
@@ -197,13 +208,30 @@ export function App(): React.ReactElement {
                 {group.description && <> — {group.description}</>}
               </p>
             ))}
-            <p className="hint">
-              {EMPTY_LOG_LEAD}
-              <button type="button" className="link" onClick={openDrawer}>
-                {EMPTY_LOG_LINK}
-              </button>
-              .
-            </p>
+            {roles.length > 0 && (
+              <div className="ask-as">
+                <p className="hint">{ROLE_HEADING}</p>
+                <div className="role-pills">
+                  {roles.map((view) => (
+                    <button
+                      key={view.roleSlug}
+                      type="button"
+                      className="role-pill"
+                      // Selects only — no dialog springs open from what looks like a
+                      // filter. The chip's own ▾ is the next step, and it now means
+                      // something.
+                      onClick={() => setRoleSlug(view.roleSlug === roleSlug ? "" : view.roleSlug)}
+                      aria-pressed={view.roleSlug === roleSlug}
+                      title={view.role}
+                      aria-label={view.role}
+                    >
+                      {/* `roleSlug` is built from the role's initials on the MCP side. */}
+                      {view.roleSlug.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -251,28 +279,60 @@ export function App(): React.ReactElement {
           void send();
         }}
       >
-        <textarea
-          ref={textarea}
-          value={draft}
-          rows={3}
-          placeholder={COMPOSER_PLACEHOLDER}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <button type="submit" disabled={busy || draft.trim().length === 0}>
-          Send
-        </button>
+        {/* The only door into the drawer, and the one place the chosen role is visible.
+            Hidden entirely when there is no library — no door to an empty room. */}
+        {roles.length > 0 && (
+          <div className="chip-row">
+            <button type="button" className="chip" onClick={openDrawer} aria-haspopup="dialog">
+              {role ? (
+                <>
+                  <span className="chip-lead">{ROLE_CHIP_LEAD}</span> {role.role}
+                </>
+              ) : (
+                ROLE_CHIP_EMPTY
+              )}
+              <span aria-hidden="true">▾</span>
+            </button>
+            {role && (
+              <button
+                type="button"
+                className="chip-clear"
+                onClick={() => setRoleSlug("")}
+                aria-label={ROLE_CLEAR_LABEL}
+                title={ROLE_CLEAR_LABEL}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="composer-row">
+          <textarea
+            ref={textarea}
+            value={draft}
+            rows={3}
+            placeholder={COMPOSER_PLACEHOLDER}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+          />
+          <button type="submit" disabled={busy || draft.trim().length === 0}>
+            Send
+          </button>
+        </div>
       </form>
 
       <RolesDrawer
         open={drawerOpen}
         datasets={library}
         busy={busy}
+        role={roleSlug}
+        onRoleChange={setRoleSlug}
         onPick={pickPrompt}
         onClose={closeDrawer}
       />

@@ -64,3 +64,14 @@ export const RECURSION_LIMIT = 50;
 export const TOOL_DETAIL_MAX_CHARS = 400;
 
 export const DEFAULT_THREAD_ID = "default";
+
+/** Longest role name `/chat` will accept. The library's own names ("Chief Executive
+ *  Officer") are well under this; the cap exists so a client can't push an essay into
+ *  the framing sentence. */
+export const ROLE_MAX_CHARS = 80;
+
+/** Prefixed to a turn when the client names a role, so `job-roles` fires — its SKILL.md
+ *  only applies a persona when "the user tells you which role they're speaking as". */
+export function roleFraming(role: string): string {
+  return `I'm asking as the ${role}. Frame the answer for that role.`;
+}

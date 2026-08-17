@@ -13,19 +13,22 @@ export const PROMPTS_PATH = "/prompts";
 // --- copy -----------------------------------------------------------------------
 
 export const APP_TITLE = "Chart agent";
-export const APP_TAGLINE = "charts rendered from the specs the tool returns";
+export const APP_TAGLINE = "Ask about your data, get charts back";
 
 export const COMPOSER_PLACEHOLDER = "Ask a question about the data…";
 
-/** Empty chat, library loaded: "Data ready: <name> — <description>." precedes this line. */
-export const EMPTY_LOG_LEAD = "Ask a question, or ";
-/** The clickable tail of the empty-state line; opens the drawer. */
-export const EMPTY_LOG_LINK = "start from a role's suggested question";
 export const DATA_READY_LABEL = "Data ready:";
 
-export const DRAWER_BUTTON_LABEL = "Roles & prompts";
-export const DRAWER_TITLE = "Start from a role";
-export const ROLE_SELECT_LABEL = "Role";
+/** Heads the role list in both places it appears: the empty state and the drawer. */
+export const ROLE_HEADING = "Who's asking?";
+
+/** The composer chip, which is the only way into the drawer. Its label is state: with no
+ *  role it offers the destination, with one it reports the choice. */
+export const ROLE_CHIP_EMPTY = "Suggested questions";
+export const ROLE_CHIP_LEAD = "Asking as";
+export const ROLE_CLEAR_LABEL = "Clear role";
+
+export const DRAWER_TITLE = "Suggested questions";
 export const DRAWER_CLOSE_LABEL = "Close";
 export const DRAWER_EMPTY = "No suggested prompts — the agent server may not be running.";
 

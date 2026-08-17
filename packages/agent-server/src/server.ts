@@ -14,6 +14,7 @@ import {
   RECURSION_LIMIT,
   TOOL_DETAIL_MAX_CHARS,
 } from "./constants.js";
+import { frameForRole } from "./roles.js";
 
 type Event =
   | { type: "text"; text: string }
@@ -333,11 +334,16 @@ const httpServer = createServer((req, res) => {
           const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
             message?: unknown;
             threadId?: unknown;
+            role?: unknown;
           };
           const message = typeof body.message === "string" ? body.message.trim() : "";
           if (!message) throw new Error("Request body needs a non-empty `message`.");
           const threadId = typeof body.threadId === "string" && body.threadId ? body.threadId : DEFAULT_THREAD_ID;
-          await streamChat(await bundlePromise, message, threadId, res);
+          const bundle = await bundlePromise;
+          // Sent on every turn rather than only when it changes, so the server stays
+          // stateless; an unusable `role` is dropped and the question goes through plain.
+          const framed = await frameForRole(bundle.mcpClient, message, body.role);
+          await streamChat(bundle, framed, threadId, res);
         } catch (err) {
           send(res, { type: "error", message: err instanceof Error ? err.message : String(err) });
         } finally {

@@ -73,17 +73,25 @@ pnpm agent    # 2. the deep agent        → :3001   (needs AWS credentials)
 pnpm web      # 3. the chat client       → :5173
 ```
 
-Open <http://127.0.0.1:5173>. The first screen is just the composer, with a line
-naming the packaged data that's ready. **Roles & prompts** (top left, or the link in
-that line) opens a left flyout: each executive role with a one-line brief and its
-suggested questions written out in full. Click one and its text fills the composer,
-editable — nothing sends until you press Enter or Send. Type your own question
-instead if you prefer; either way you get a chart with no data pasted into chat, and
-a follow-up like *"make the bars green"* exercises the restyle path. The agent's tool
-calls fold into one collapsed *N steps* line per turn — open it to see each call and
-its arguments; text and charts stay inline. The flyout is served by `GET
-:3001/prompts`, which groups the MCP server's prompt library by dataset then role;
-`GET :3001/datasets` proxies the catalog the same way.
+Open <http://127.0.0.1:5173>. The first screen names the packaged data that's ready
+and asks **who's asking** — one button per executive role. Picking one sets the role
+for the next question and nothing else.
+
+The role rides on the composer as a chip, which is also the only way into the left
+flyout: click it (or the *Suggested questions* it shows before you've chosen a role)
+and every role opens out with a one-line brief and its suggested questions written in
+full. Click a question and its text fills the composer, editable — nothing sends until
+you press Enter or Send. Type your own question instead if you prefer.
+
+Whatever the chip shows is sent with the message, so the agent frames its answer the
+way that executive wants it — a CFO gets the margin read, a CEO gets the one-sentence
+version. Clear the chip with `×` to go back to a plain answer. Either way you get a
+chart with no data pasted into chat, and a follow-up like *"make the bars green"*
+exercises the restyle path. The agent's tool calls fold into one collapsed *N steps*
+line per turn — open it to see each call and its arguments; text and charts stay
+inline. The flyout is served by `GET :3001/prompts`, which groups the MCP server's
+prompt library by dataset then role; `GET :3001/datasets` proxies the catalog the same
+way.
 
 If the agent server reports an expired token, refresh your credentials (e.g. `aws sso
 login`) **and restart the agent server** — it resolves credentials once at startup, so a

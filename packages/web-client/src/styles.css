@@ -59,16 +59,15 @@ code {
   margin: 0 auto;
 }
 
+/* Identity only. The way into the prompt library lives on the composer, next to where
+   the question gets typed — not up here, where it read as a button wearing the app's
+   name. */
 header {
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.1rem;
   padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--line);
-}
-
-header strong {
-  margin-left: 0.25rem;
 }
 
 header span {
@@ -107,17 +106,6 @@ button.ghost:hover {
   color: var(--accent);
 }
 
-/* Inline text button, used mid-sentence in the empty state. */
-button.link {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--accent);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 textarea:focus-visible,
 button:focus-visible,
 summary:focus-visible {
@@ -142,7 +130,7 @@ summary:focus-visible {
 .empty {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 1.25rem;
   padding-top: 0.25rem;
 }
 
@@ -154,6 +142,42 @@ summary:focus-visible {
 
 .data-ready .label {
   color: var(--muted);
+}
+
+/* The five executives, opening the page: this app's organizing idea is who is asking,
+   so it is what a first-time visitor sees rather than something behind a control. */
+.ask-as {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.role-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+button.role-pill {
+  background: var(--paper);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+button.role-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button.role-pill[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 article {
@@ -262,9 +286,18 @@ p.error {
 
 .composer {
   display: flex;
-  gap: 0.6rem;
+  flex-direction: column;
+  gap: 0.5rem;
   padding: 0.9rem 1.25rem 1.25rem;
   border-top: 1px solid var(--line);
+}
+
+/* The textarea and Send stay a row of their own: `align-self: flex-end` below is a
+   cross-axis rule, so leaving it on a column `.composer` would shove Send to the edge
+   of the column instead of aligning it with the bottom of the textarea. */
+.composer-row {
+  display: flex;
+  gap: 0.6rem;
 }
 
 textarea {
@@ -278,8 +311,54 @@ textarea {
   color: inherit;
 }
 
-.composer button {
+.composer-row button {
   align-self: flex-end;
+}
+
+/* --- the role chip ------------------------------------------------------------- */
+
+/* The one door into the prompt library, and the only place the chosen role is visible.
+   It sits on the composer because that is what it modifies: the message about to be
+   sent. Its label is state — the destination when no role is set, the choice when one
+   is. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+button.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+button.chip:hover {
+  border-color: var(--accent);
+}
+
+.chip-lead {
+  color: var(--muted);
+}
+
+button.chip-clear {
+  background: none;
+  border: 0;
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+button.chip-clear:hover {
+  color: var(--danger);
 }
 
 /* --- drawer ------------------------------------------------------------------- */
@@ -345,39 +424,11 @@ dialog.drawer::backdrop {
   font-weight: 600;
 }
 
-/* Role selector: the one control in the drawer, so it gets input-weight styling. */
-.drawer-select {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.drawer-select select {
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--ink);
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--paper);
-}
-
-.drawer-select select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.drawer-brief {
-  margin-top: -0.5rem;
-  font-size: 0.88rem;
-  line-height: 1.5;
-}
-
-.drawer-dataset h3 {
-  margin: 0 0 0.25rem;
+/* Every role listed, not one at a time behind a dropdown — five is few enough to show,
+   and a <select> hid the panel's own breadth. A row selects and expands at once: the
+   two meanings point the same way. */
+.role-list h3 {
+  margin: 0 0 0.5rem;
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--muted);
@@ -385,18 +436,72 @@ dialog.drawer::backdrop {
   letter-spacing: 0.04em;
 }
 
-.drawer-dataset h3 code {
-  text-transform: none;
-  letter-spacing: 0;
+.role {
+  border-top: 1px solid var(--line);
+}
+
+.role:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+button.role-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0.6rem 0;
   color: var(--ink);
 }
 
-.drawer-dataset > .hint {
-  margin-bottom: 0.6rem;
+button.role-row:hover .role-name {
+  color: var(--accent);
+}
+
+.role-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* The disclosure marker doubles as the selection marker — there is only one selected
+   role, and it is the only expanded one. */
+button.role-row::before {
+  content: "▸";
+  display: inline-block;
+  width: 1rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+button.role-row[aria-expanded="true"]::before {
+  content: "▾";
+  color: var(--accent);
+}
+
+button.role-row[aria-expanded="true"] .role-name {
+  color: var(--accent);
+}
+
+.role-detail {
+  padding: 0 0 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.role-detail .hint {
   line-height: 1.5;
 }
 
-.drawer-dataset ul {
+.role-detail h4 {
+  margin: 0 0 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.role-detail ul {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -430,9 +535,8 @@ button.prompt:disabled {
 }
 
 @media (max-width: 640px) {
-  header span {
-    display: none;
-  }
+  /* The tagline stacks under the wordmark rather than sharing its line, so it no longer
+     has to be hidden to keep the header on one row. */
   dialog.drawer {
     width: 100%;
     border-right: 0;
