@@ -25,6 +25,7 @@ export const DATA_READY_LABEL = "Data ready:";
 
 export const DRAWER_BUTTON_LABEL = "Roles & prompts";
 export const DRAWER_TITLE = "Start from a role";
+export const ROLE_SELECT_LABEL = "Role";
 export const DRAWER_CLOSE_LABEL = "Close";
 export const DRAWER_EMPTY = "No suggested prompts — the agent server may not be running.";
 

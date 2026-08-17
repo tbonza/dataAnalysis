@@ -1,12 +1,38 @@
-import { useEffect, useRef } from "react";
-import { DRAWER_CLOSE_LABEL, DRAWER_EMPTY, DRAWER_TITLE } from "./constants.js";
-import type { DatasetGroup } from "./library.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DRAWER_CLOSE_LABEL, DRAWER_EMPTY, DRAWER_TITLE, ROLE_SELECT_LABEL } from "./constants.js";
+import type { DatasetGroup, RoleGroup } from "./library.js";
+
+/** One role across every dataset it has prompts for — the unit the drawer's selector
+ *  picks between. Roles are grouped per dataset on the wire; the drawer flips that so
+ *  the user chooses *who they are* first, then sees that role's questions per dataset. */
+interface RoleView {
+  roleSlug: string;
+  role: string;
+  description: string;
+  datasets: Array<{ dataset: string; description: string; prompts: RoleGroup["prompts"] }>;
+}
+
+function rolesAcross(datasets: DatasetGroup[]): RoleView[] {
+  const bySlug = new Map<string, RoleView>();
+  for (const group of datasets) {
+    for (const role of group.roles) {
+      let view = bySlug.get(role.roleSlug);
+      if (!view) {
+        view = { roleSlug: role.roleSlug, role: role.role, description: role.description, datasets: [] };
+        bySlug.set(role.roleSlug, view);
+      }
+      view.datasets.push({ dataset: group.dataset, description: group.description, prompts: role.prompts });
+    }
+  }
+  return [...bySlug.values()];
+}
 
 /**
  * The left flyout: the executive prompt library as a native `<dialog>` docked to the
  * left edge. `showModal()` gives focus trap, Esc-to-close, backdrop and focus-return
- * for free. Picking a prompt hands its text to the caller and nothing else — the
- * caller closes the drawer and decides what to do with the text.
+ * for free. A role selector at the top (first role pre-selected) scopes the list to
+ * one role's questions. Picking a prompt hands its text to the caller and nothing
+ * else — the caller decides what to do with the text.
  */
 export function RolesDrawer({
   open,
@@ -22,6 +48,12 @@ export function RolesDrawer({
   onClose: () => void;
 }): React.ReactElement {
   const dialog = useRef<HTMLDialogElement>(null);
+  const roles = useMemo(() => rolesAcross(datasets), [datasets]);
+
+  // The chosen role survives close/reopen; "" means "no choice yet", which resolves
+  // to the first role — so there is always a selection once the library has loaded.
+  const [chosen, setChosen] = useState("");
+  const selected = roles.find((r) => r.roleSlug === chosen) ?? roles[0];
 
   // Guard on `dialog.open` both ways: closing fires the native `close` event, which
   // calls `onClose`, which sets `open=false` — without the guard that would call
@@ -69,38 +101,45 @@ export function RolesDrawer({
           </button>
         </div>
 
-        {datasets.length === 0 ? (
+        {!selected ? (
           <p className="hint">{DRAWER_EMPTY}</p>
         ) : (
-          datasets.map((group) => (
-            <section key={group.dataset} className="drawer-dataset">
-              <h3>
-                <code>{group.dataset}</code>
-              </h3>
-              {group.description && <p className="hint">{group.description}</p>}
+          <>
+            <label className="drawer-select">
+              <span>{ROLE_SELECT_LABEL}</span>
+              <select value={selected.roleSlug} onChange={(event) => setChosen(event.target.value)}>
+                {roles.map((role) => (
+                  <option key={role.roleSlug} value={role.roleSlug}>
+                    {role.role}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selected.description && <p className="hint drawer-brief">{selected.description}</p>}
 
-              {group.roles.map((role) => (
-                <div key={role.roleSlug} className="drawer-role">
-                  <h4>{role.role}</h4>
-                  {role.description && <p className="hint">{role.description}</p>}
-                  <ul>
-                    {role.prompts.map((prompt) => (
-                      <li key={prompt.name}>
-                        <button
-                          type="button"
-                          className="prompt"
-                          disabled={busy}
-                          onClick={() => pick(prompt.text)}
-                        >
-                          {prompt.text}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </section>
-          ))
+            {selected.datasets.map((group) => (
+              <section key={group.dataset} className="drawer-dataset">
+                <h3>
+                  <code>{group.dataset}</code>
+                </h3>
+                {group.description && <p className="hint">{group.description}</p>}
+                <ul>
+                  {group.prompts.map((prompt) => (
+                    <li key={prompt.name}>
+                      <button
+                        type="button"
+                        className="prompt"
+                        disabled={busy}
+                        onClick={() => pick(prompt.text)}
+                      >
+                        {prompt.text}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </>
         )}
       </div>
     </dialog>
