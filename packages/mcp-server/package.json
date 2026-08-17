@@ -1,0 +1,30 @@
+{
+  "name": "mcp-server",
+  "version": "1.0.0",
+  "description": "MCP tool for data analysis and charts. Deterministic: no LLM, no credentials.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "cli": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "files": [
+    "src",
+    "skills"
+  ],
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "1.32.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@uwdata/mosaic-sql": "^0.30.0",
+    "flint-chart": "^0.5.1",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0"
+  }
+}

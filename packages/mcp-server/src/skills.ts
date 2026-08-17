@@ -1,0 +1,130 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
+
+/**
+ * Agent Skills loader (https://agentskills.io/specification).
+ *
+ * The skills are the portable part of this server: a consuming agent reads them to
+ * learn how to author a query and a chart, so they travel where our tool
+ * descriptions alone would not. They are served over MCP as resources — the same
+ * approach flint-chart-mcp takes with `flint://agent-skill`.
+ */
+
+/** Fields the specification permits in frontmatter. Anything else is a compliance bug. */
+export const ALLOWED_FRONTMATTER_FIELDS = [
+  "name",
+  "description",
+  "license",
+  "compatibility",
+  "metadata",
+  "allowed-tools",
+] as const;
+
+export const SKILL_URI_PREFIX = "chart://skill/";
+
+export interface SkillReference {
+  /** Path relative to the skill root, e.g. "references/chart-types.md". */
+  relativePath: string;
+  uri: string;
+  text: string;
+}
+
+export interface Skill {
+  name: string;
+  description: string;
+  /** Directory name, which the spec requires to equal `name`. */
+  directory: string;
+  frontmatter: Record<string, unknown>;
+  /** The Markdown body, frontmatter removed. */
+  body: string;
+  /** The whole file, as served. */
+  text: string;
+  uri: string;
+  references: SkillReference[];
+}
+
+const SKILLS_DIR = fileURLToPath(new URL("../skills", import.meta.url));
+
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+
+export interface ParsedSkillFile {
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+/** Split `---` frontmatter from the body. Exported so the compliance test uses the same parser. */
+export function parseSkillFile(text: string): ParsedSkillFile {
+  const match = FRONTMATTER.exec(text);
+  if (!match) throw new Error("SKILL.md must begin with `---` YAML frontmatter.");
+  const parsed: unknown = parseYaml(match[1] ?? "");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("SKILL.md frontmatter must be a YAML mapping.");
+  }
+  return { frontmatter: parsed as Record<string, unknown>, body: match[2] ?? "" };
+}
+
+function readReferences(skillDir: string, skillName: string): SkillReference[] {
+  const dir = join(skillDir, "references");
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.endsWith(".md"))
+    .sort()
+    .map((entry) => ({
+      relativePath: `references/${entry}`,
+      uri: `${SKILL_URI_PREFIX}${skillName}/references/${entry}`,
+      text: readFileSync(join(dir, entry), "utf8"),
+    }));
+}
+
+/**
+ * Read every skill once, at startup. `createMcpHandler` builds a server per
+ * request, so this must not be per-request work.
+ */
+export function loadSkills(): Skill[] {
+  let directories: string[];
+  try {
+    directories = readdirSync(SKILLS_DIR).filter((entry) =>
+      statSync(join(SKILLS_DIR, entry)).isDirectory()
+    );
+  } catch {
+    return [];
+  }
+
+  const skills: Skill[] = [];
+  for (const directory of directories.sort()) {
+    const skillDir = join(SKILLS_DIR, directory);
+    let text: string;
+    try {
+      text = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+    } catch {
+      continue; // A directory without SKILL.md is not a skill.
+    }
+
+    const { frontmatter, body } = parseSkillFile(text);
+    const name = typeof frontmatter["name"] === "string" ? frontmatter["name"] : directory;
+    const description =
+      typeof frontmatter["description"] === "string" ? frontmatter["description"] : "";
+
+    skills.push({
+      name,
+      description,
+      directory,
+      frontmatter,
+      body,
+      text,
+      uri: `${SKILL_URI_PREFIX}${name}`,
+      references: readReferences(skillDir, name),
+    });
+  }
+  return skills;
+}
+
+/** Absolute path to the skills directory, for the compliance test. */
+export const skillsDirectory = SKILLS_DIR;

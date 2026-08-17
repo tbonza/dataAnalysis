@@ -1,0 +1,140 @@
+:root {
+  --bg: #fbfbfa;
+  --ink: #1c1c1a;
+  --muted: #6b6b66;
+  --line: #e3e3df;
+  --accent: #0b6b5f;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+header span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+article {
+  margin-bottom: 1.25rem;
+}
+
+article.user p {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  margin: 0 0 0 auto;
+  max-width: 80%;
+  white-space: pre-wrap;
+}
+
+article.assistant p {
+  margin: 0 0 0.5rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* Tool calls are visible but recede — useful for seeing the agent work, not the point. */
+article.assistant p.tool {
+  color: var(--accent);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.78rem;
+  margin-bottom: 0.25rem;
+}
+
+article.assistant p.tool::before {
+  content: "→ ";
+}
+
+p.error {
+  color: #9b2226;
+  background: #fdf1f1;
+  border: 1px solid #f3d3d3;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.chart {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  margin: 0.5rem 0 1rem;
+  overflow-x: auto;
+}
+
+.composer {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.9rem 1.25rem 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+textarea {
+  flex: 1;
+  resize: vertical;
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: #fff;
+  color: inherit;
+}
+
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  align-self: flex-end;
+  font: inherit;
+  padding: 0.6rem 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #c8c8c3;
+  cursor: not-allowed;
+}
