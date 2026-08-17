@@ -59,4 +59,8 @@ export const RECOMMENDED_PROMPT_KIND = "recommended-prompt";
 /** Ceiling on the deepagents graph's step count for a single turn. */
 export const RECURSION_LIMIT = 50;
 
+/** Longest `detail` string a `tool` SSE event carries (a tool call's JSON arguments,
+ *  truncated) — enough to read what a call did, small enough for `load_data` rows. */
+export const TOOL_DETAIL_MAX_CHARS = 400;
+
 export const DEFAULT_THREAD_ID = "default";

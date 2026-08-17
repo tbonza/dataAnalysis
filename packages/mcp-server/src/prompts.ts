@@ -11,6 +11,10 @@ import { parseSkillFile, type Skill } from "./skills.js";
 export interface RolePrompt {
   role: string;
   roleSlug: string;
+  /** A user-facing one-line brief for the role: the first sentence of the role doc's
+   *  body (the persona), not its `description` — that field is agent-facing ("Use
+   *  whenever the user is speaking as…") and reads oddly in a menu. */
+  roleBrief: string;
   dataset: string;
   title: string;
   text: string;
@@ -36,6 +40,18 @@ function slugify(text: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+/** The first sentence of the first prose paragraph of a Markdown body — headings
+ *  skipped, hard-wrapped lines joined — or "" if there isn't one. Role docs are
+ *  written so that opening sentence stands alone ("Optimizes for …"). */
+function firstSentenceOf(body: string): string {
+  const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim());
+  const prose = paragraphs.find((p) => p.length > 0 && !p.startsWith("#"));
+  if (!prose) return "";
+  const joined = prose.replace(/\s*\n\s*/g, " ");
+  const end = joined.search(/[.!?](\s|$)/);
+  return end === -1 ? joined : joined.slice(0, end + 1);
+}
+
 interface RawPrompt {
   dataset?: unknown;
   title?: unknown;
@@ -53,12 +69,16 @@ export function buildPromptLibrary(skill: Skill | undefined): RolePrompt[] {
 
   const prompts: RolePrompt[] = [];
   for (const reference of skill.references) {
-    const { frontmatter } = parseSkillFile(reference.text);
+    const { frontmatter, body } = parseSkillFile(reference.text);
     const role = frontmatter["role"];
     if (typeof role !== "string" || role.length === 0) {
       throw new Error(`Role reference "${reference.relativePath}" is missing a non-empty "role".`);
     }
     const roleSlug = slugForRole(role);
+    const roleBrief = firstSentenceOf(body);
+    if (roleBrief.length === 0) {
+      throw new Error(`Role reference "${reference.relativePath}" needs a persona paragraph in its body.`);
+    }
 
     const raw = frontmatter["prompts"];
     if (!Array.isArray(raw) || raw.length === 0) {
@@ -78,7 +98,14 @@ export function buildPromptLibrary(skill: Skill | undefined): RolePrompt[] {
       if (typeof text !== "string" || text.trim().length === 0) {
         throw new Error(`${reference.relativePath} prompts[${index}] is missing "text".`);
       }
-      prompts.push({ role, roleSlug, dataset, title, text: text.trim() });
+      prompts.push({
+        role,
+        roleSlug,
+        roleBrief,
+        dataset,
+        title,
+        text: text.trim(),
+      });
     }
   }
   return prompts;
@@ -90,13 +117,18 @@ export function promptNameFor(prompt: RolePrompt): string {
 }
 
 /** Goes into each registration's `_meta`, and is what the picker groups on. */
-export function promptMetaFor(
-  prompt: RolePrompt
-): { kind: typeof RECOMMENDED_PROMPT_KIND; dataset: string; role: string; roleSlug: string } {
+export function promptMetaFor(prompt: RolePrompt): {
+  kind: typeof RECOMMENDED_PROMPT_KIND;
+  dataset: string;
+  role: string;
+  roleSlug: string;
+  roleBrief: string;
+} {
   return {
     kind: RECOMMENDED_PROMPT_KIND,
     dataset: prompt.dataset,
     role: prompt.role,
     roleSlug: prompt.roleSlug,
+    roleBrief: prompt.roleBrief,
   };
 }

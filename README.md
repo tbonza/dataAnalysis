@@ -72,14 +72,17 @@ pnpm agent    # 2. the deep agent        → :3001   (needs AWS credentials)
 pnpm web      # 3. the chat client       → :5173
 ```
 
-Open <http://127.0.0.1:5173>. The composer starts empty; the entry point is the
-**picker** above it, showing every packaged dataset's recommended prompts grouped by
-executive role. Click one and its text fills the composer, editable — nothing sends
-until you press Enter or Send. Pick a prompt (or type your own question) to get a
-chart with no data pasted into chat; a follow-up like *"make the bars green"*
-exercises the restyle path. The picker is served by `GET :3001/prompts`, which groups
-the MCP server's prompt library by dataset then role; `GET :3001/datasets` proxies the
-catalog the same way.
+Open <http://127.0.0.1:5173>. The first screen is just the composer, with a line
+naming the packaged data that's ready. **Roles & prompts** (top left, or the link in
+that line) opens a left flyout: each executive role with a one-line brief and its
+suggested questions written out in full. Click one and its text fills the composer,
+editable — nothing sends until you press Enter or Send. Type your own question
+instead if you prefer; either way you get a chart with no data pasted into chat, and
+a follow-up like *"make the bars green"* exercises the restyle path. The agent's tool
+calls fold into one collapsed *N steps* line per turn — open it to see each call and
+its arguments; text and charts stay inline. The flyout is served by `GET
+:3001/prompts`, which groups the MCP server's prompt library by dataset then role;
+`GET :3001/datasets` proxies the catalog the same way.
 
 If the agent server reports an expired token, refresh your credentials (e.g. `aws sso
 login`) **and restart the agent server** — it resolves credentials once at startup, so a

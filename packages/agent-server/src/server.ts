@@ -12,6 +12,7 @@ import {
   PROMPTS_PATH,
   RECOMMENDED_PROMPT_KIND,
   RECURSION_LIMIT,
+  TOOL_DETAIL_MAX_CHARS,
 } from "./constants.js";
 
 type Event =
@@ -115,7 +116,9 @@ async function streamChat(
         if (kind === "ai") {
           const ai = raw as AIMessage;
           for (const call of ai.tool_calls ?? []) {
-            if (call.name) send(res, { type: "tool", name: call.name });
+            if (!call.name) continue;
+            const detail = detailOf(call.args);
+            send(res, detail ? { type: "tool", name: call.name, detail } : { type: "tool", name: call.name });
           }
           const text = textOf(ai.content).trim();
           if (text) send(res, { type: "text", text });
@@ -134,6 +137,16 @@ async function streamChat(
   }
 }
 
+/** A tool call's arguments as one compact JSON line for the client's collapsed trail.
+ *  Capped so a `load_data` call carrying hundreds of rows doesn't flood the stream —
+ *  the trail is for seeing *what* the agent did, not for replaying it. */
+function detailOf(args: unknown): string | undefined {
+  if (args === undefined || args === null) return undefined;
+  const json = JSON.stringify(args);
+  if (!json || json === "{}") return undefined;
+  return json.length > TOOL_DETAIL_MAX_CHARS ? `${json.slice(0, TOOL_DETAIL_MAX_CHARS)}…` : json;
+}
+
 /** Pull the structured payload out of a tool result, falling back to text blocks —
  *  the same fallback mcp-server's own `cli.ts` uses. */
 function resultOf(result: { structuredContent?: unknown; content?: unknown[] }): unknown {
@@ -143,11 +156,41 @@ function resultOf(result: { structuredContent?: unknown; content?: unknown[] }):
 
 interface GroupedPrompts {
   dataset: string;
+  /** The catalog's description of the dataset, minus its agent-routing "Use when…"
+   *  clause; empty if the catalog lacks it. */
+  description: string;
   roles: Array<{
     role: string;
     roleSlug: string;
+    /** One user-facing paragraph on the role — shown under the role name. */
+    description: string;
     prompts: Array<{ name: string; title: string; text: string }>;
   }>;
+}
+
+/** Skill and dataset descriptions are written for an agent and end with a routing
+ *  clause ("… Use when a question is about …"). The picker wants only the part before
+ *  it: what the thing *is*. */
+function userFacing(description: string): string {
+  const cut = description.search(/\bUse (when|before|whenever)\b/i);
+  return (cut === -1 ? description : description.slice(0, cut)).trim();
+}
+
+/** `list_available_datasets`' catalog as a name -> description map. Anything that isn't
+ *  the expected `{ datasets: [{ name, description }] }` shape yields an empty map, so a
+ *  catalog hiccup thins the picker's captions rather than failing the whole route. */
+async function datasetDescriptions(client: McpToolClient): Promise<Map<string, string>> {
+  const raw = resultOf(await client.callTool({ name: "list_available_datasets", arguments: {} }));
+  const out = new Map<string, string>();
+  if (typeof raw !== "object" || raw === null) return out;
+  const list = (raw as { datasets?: unknown }).datasets;
+  if (!Array.isArray(list)) return out;
+  for (const entry of list as Array<{ name?: unknown; description?: unknown }>) {
+    if (typeof entry.name === "string" && typeof entry.description === "string") {
+      out.set(entry.name, userFacing(entry.description));
+    }
+  }
+  return out;
 }
 
 /** The first text block of a `getPrompt` result — the same text `promptNameFor`'s
@@ -163,6 +206,7 @@ function firstTextOf(result: { messages: Array<{ content: { type: string; text?:
 async function groupPrompts(client: McpToolClient): Promise<GroupedPrompts[]> {
   const { prompts } = await client.listPrompts();
   const recommended = prompts.filter((p) => p._meta && p._meta["kind"] === RECOMMENDED_PROMPT_KIND);
+  const descriptions = await datasetDescriptions(client);
 
   const byDataset = new Map<string, Map<string, GroupedPrompts["roles"][number]>>();
 
@@ -173,6 +217,7 @@ async function groupPrompts(client: McpToolClient): Promise<GroupedPrompts[]> {
     const dataset = meta["dataset"];
     const role = meta["role"];
     const roleSlug = meta["roleSlug"];
+    const roleBrief = meta["roleBrief"];
     if (typeof dataset !== "string" || typeof role !== "string" || typeof roleSlug !== "string") continue;
 
     const text = firstTextOf(await client.getPrompt({ name: prompt.name }));
@@ -184,7 +229,12 @@ async function groupPrompts(client: McpToolClient): Promise<GroupedPrompts[]> {
     }
     let entry = roles.get(roleSlug);
     if (!entry) {
-      entry = { role, roleSlug, prompts: [] };
+      entry = {
+        role,
+        roleSlug,
+        description: typeof roleBrief === "string" ? roleBrief : "",
+        prompts: [],
+      };
       roles.set(roleSlug, entry);
     }
     entry.prompts.push({ name: prompt.name, title: prompt.title ?? prompt.name, text });
@@ -192,6 +242,7 @@ async function groupPrompts(client: McpToolClient): Promise<GroupedPrompts[]> {
 
   return [...byDataset.entries()].map(([dataset, roles]) => ({
     dataset,
+    description: descriptions.get(dataset) ?? "",
     roles: [...roles.values()],
   }));
 }

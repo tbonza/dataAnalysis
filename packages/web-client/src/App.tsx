@@ -1,7 +1,20 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Chart } from "./Chart.js";
-import { AGENT_URL, CHAT_PATH, COMPOSER_PLACEHOLDER, EMPTY_LOG_HINT } from "./constants.js";
-import { PromptPicker } from "./PromptPicker.js";
+import {
+  AGENT_URL,
+  APP_TAGLINE,
+  APP_TITLE,
+  CHAT_PATH,
+  COMPOSER_PLACEHOLDER,
+  DATA_READY_LABEL,
+  DRAWER_BUTTON_LABEL,
+  EMPTY_LOG_LEAD,
+  EMPTY_LOG_LINK,
+  WORKING_LABEL,
+  trailSummary,
+} from "./constants.js";
+import { fetchLibrary, type DatasetGroup } from "./library.js";
+import { RolesDrawer } from "./RolesDrawer.js";
 
 /** The event shapes the agent server streams over SSE. */
 type AgentEvent =
@@ -12,35 +25,90 @@ type AgentEvent =
   | { type: "error"; message: string }
   | { type: "done" };
 
+interface Step {
+  name: string;
+  detail?: string;
+}
+
+type Part =
+  | { kind: "text"; text: string }
+  | { kind: "tool"; step: Step }
+  | { kind: "chart"; chartId: string; spec: Record<string, unknown> }
+  | { kind: "error"; message: string };
+
 interface Turn {
   role: "user" | "assistant";
   /** Rendered in order, so a chart appears where the agent produced it. */
-  parts: Array<
-    | { kind: "text"; text: string }
-    | { kind: "tool"; name: string }
-    | { kind: "chart"; chartId: string; spec: Record<string, unknown> }
-    | { kind: "error"; message: string }
-  >;
+  parts: Part[];
+}
+
+/** Rendered form of a turn: consecutive tool calls fold into one collapsed trail, so
+ *  the ReAct loop is visible on demand without interleaving every step with the
+ *  answer. Text and charts stay exactly where they were. */
+type Rendered = Exclude<Part, { kind: "tool" }> | { kind: "trail"; steps: Step[] };
+
+function groupParts(parts: Part[]): Rendered[] {
+  const out: Rendered[] = [];
+  for (const part of parts) {
+    if (part.kind !== "tool") {
+      out.push(part);
+      continue;
+    }
+    const last = out[out.length - 1];
+    if (last && last.kind === "trail") last.steps.push(part.step);
+    else out.push({ kind: "trail", steps: [part.step] });
+  }
+  return out;
+}
+
+/** The most recent tool the agent called this turn — shown next to "Working…". */
+function lastStepOf(turns: Turn[]): Step | undefined {
+  const last = turns[turns.length - 1];
+  if (!last || last.role !== "assistant") return undefined;
+  for (let i = last.parts.length - 1; i >= 0; i--) {
+    const part = last.parts[i];
+    if (part && part.kind === "tool") return part.step;
+  }
+  return undefined;
 }
 
 export function App(): React.ReactElement {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [library, setLibrary] = useState<DatasetGroup[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   // One thread for the page's lifetime, so a follow-up like "make the bars green" can
   // see the chart the previous turn made.
   const threadId = useRef(crypto.randomUUID());
 
-  // The picker never sends — it only fills the composer, editable, and hands focus
-  // back so the user can send as-is or adjust it first.
+  // The library is fetched once and shared by the empty state and the drawer.
+  useEffect(() => {
+    let cancelled = false;
+    void fetchLibrary().then((datasets) => {
+      if (!cancelled) setLibrary(datasets);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
+  // Picking never sends — it fills the composer, editable, and hands focus to the
+  // textarea so the user can send as-is or adjust it first. The drawer has already
+  // closed itself (and restored focus to its opener) by the time this runs, so the
+  // synchronous focus call here is the one that sticks.
   const pickPrompt = useCallback((text: string) => {
     setDraft(text);
+    setDrawerOpen(false);
     textarea.current?.focus();
   }, []);
 
-  const appendPart = useCallback((part: Turn["parts"][number]) => {
+  const appendPart = useCallback((part: Part) => {
     setTurns((current) => {
       const next = [...current];
       const last = next[next.length - 1];
@@ -90,7 +158,11 @@ export function App(): React.ReactElement {
           const event = JSON.parse(line.slice(6)) as AgentEvent;
 
           if (event.type === "text") appendPart({ kind: "text", text: event.text });
-          else if (event.type === "tool") appendPart({ kind: "tool", name: event.name });
+          else if (event.type === "tool")
+            appendPart({
+              kind: "tool",
+              step: event.detail ? { name: event.name, detail: event.detail } : { name: event.name },
+            });
           else if (event.type === "chart")
             appendPart({ kind: "chart", chartId: event.chartId, spec: event.vlSpec });
           else if (event.type === "report") appendPart({ kind: "text", text: event.markdown });
@@ -104,41 +176,72 @@ export function App(): React.ReactElement {
     }
   }, [appendPart, busy, draft]);
 
+  const lastStep = busy ? lastStepOf(turns) : undefined;
+
   return (
     <div className="app">
       <header>
-        <strong>Chart agent</strong>
-        <span>charts rendered from the specs the tool returns</span>
+        <button type="button" className="ghost" onClick={openDrawer} aria-haspopup="dialog">
+          {DRAWER_BUTTON_LABEL}
+        </button>
+        <strong>{APP_TITLE}</strong>
+        <span>{APP_TAGLINE}</span>
       </header>
 
       <div className="log" ref={scroller}>
         {turns.length === 0 && (
-          <>
-            <p className="hint">{EMPTY_LOG_HINT}</p>
-            <PromptPicker onPick={pickPrompt} busy={busy} />
-          </>
+          <div className="empty">
+            {library.map((group) => (
+              <p key={group.dataset} className="data-ready">
+                <span className="label">{DATA_READY_LABEL}</span> <code>{group.dataset}</code>
+                {group.description && <> — {group.description}</>}
+              </p>
+            ))}
+            <p className="hint">
+              {EMPTY_LOG_LEAD}
+              <button type="button" className="link" onClick={openDrawer}>
+                {EMPTY_LOG_LINK}
+              </button>
+              .
+            </p>
+          </div>
         )}
+
         {turns.map((turn, turnIndex) => (
           <article key={turnIndex} className={turn.role}>
-            {turn.parts.map((part, partIndex) => {
+            {groupParts(turn.parts).map((part, partIndex) => {
               if (part.kind === "text") return <p key={partIndex}>{part.text}</p>;
-              if (part.kind === "tool")
-                return (
-                  <p key={partIndex} className="tool">
-                    {part.name}
-                  </p>
-                );
               if (part.kind === "error")
                 return (
                   <p key={partIndex} className="error">
                     {part.message}
                   </p>
                 );
+              if (part.kind === "trail")
+                return (
+                  <details key={partIndex} className="trail">
+                    <summary>{trailSummary(part.steps.map((s) => s.name))}</summary>
+                    <ol>
+                      {part.steps.map((step, stepIndex) => (
+                        <li key={stepIndex}>
+                          <span className="step-name">{step.name}</span>
+                          {step.detail && <span className="step-detail">{step.detail}</span>}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                );
               return <Chart key={`${part.chartId}-${partIndex}`} spec={part.spec} />;
             })}
           </article>
         ))}
-        {busy && <p className="hint">Working…</p>}
+
+        {busy && (
+          <p className="hint working">
+            {WORKING_LABEL}
+            {lastStep && <span className="step-name">{lastStep.name}</span>}
+          </p>
+        )}
       </div>
 
       <form
@@ -165,6 +268,14 @@ export function App(): React.ReactElement {
           Send
         </button>
       </form>
+
+      <RolesDrawer
+        open={drawerOpen}
+        datasets={library}
+        busy={busy}
+        onPick={pickPrompt}
+        onClose={closeDrawer}
+      />
     </div>
   );
 }
