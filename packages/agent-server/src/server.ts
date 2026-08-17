@@ -1,10 +1,17 @@
 import { createServer, type ServerResponse } from "node:http";
 import { buildAgent, type AgentBundle } from "./agent.js";
-
-const PORT = Number(process.env.AGENT_PORT ?? 3001);
-const HOST = "127.0.0.1";
-/** The web client runs on a different port, so it needs an explicit origin allowance. */
-const ALLOWED_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://127.0.0.1:5173";
+import {
+  AGENT_PORT,
+  CHAT_PATH,
+  CLIENT_ORIGIN,
+  DATASETS_PATH,
+  DEFAULT_THREAD_ID,
+  HEALTH_PATH,
+  HOST,
+  PROMPTS_PATH,
+  RECOMMENDED_PROMPT_KIND,
+  RECURSION_LIMIT,
+} from "./constants.js";
 
 type Event =
   | { type: "text"; text: string }
@@ -82,7 +89,7 @@ async function streamChat(
     { messages: [{ role: "user", content: message }], files: bundle.skillFiles },
     {
       streamMode: "updates",
-      recursionLimit: 50,
+      recursionLimit: RECURSION_LIMIT,
       // The thread is what makes a follow-up turn see the previous one's charts.
       configurable: { thread_id: threadId },
     }
@@ -122,11 +129,86 @@ async function streamChat(
   }
 }
 
+/** Pull the structured payload out of a tool result, falling back to text blocks —
+ *  the same fallback mcp-server's own `cli.ts` uses. */
+function resultOf(result: { structuredContent?: unknown; content?: unknown[] }): unknown {
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  return textOf(result.content);
+}
+
+interface GroupedPrompts {
+  dataset: string;
+  roles: Array<{
+    role: string;
+    roleSlug: string;
+    prompts: Array<{ name: string; title: string }>;
+  }>;
+}
+
+/** `listPrompts()`'s recommended-prompt entries, grouped dataset -> role -> prompt —
+ *  the shape the web picker renders directly. */
+function groupPrompts(
+  prompts: Array<{ name: string; title?: string; description?: string; _meta?: Record<string, unknown> }>
+): GroupedPrompts[] {
+  const byDataset = new Map<string, Map<string, GroupedPrompts["roles"][number]>>();
+
+  for (const prompt of prompts) {
+    const meta = prompt._meta;
+    if (!meta || meta["kind"] !== RECOMMENDED_PROMPT_KIND) continue;
+    const dataset = meta["dataset"];
+    const role = meta["role"];
+    const roleSlug = meta["roleSlug"];
+    if (typeof dataset !== "string" || typeof role !== "string" || typeof roleSlug !== "string") continue;
+
+    let roles = byDataset.get(dataset);
+    if (!roles) {
+      roles = new Map();
+      byDataset.set(dataset, roles);
+    }
+    let entry = roles.get(roleSlug);
+    if (!entry) {
+      entry = { role, roleSlug, prompts: [] };
+      roles.set(roleSlug, entry);
+    }
+    entry.prompts.push({ name: prompt.name, title: prompt.title ?? prompt.name });
+  }
+
+  return [...byDataset.entries()].map(([dataset, roles]) => ({
+    dataset,
+    roles: [...roles.values()],
+  }));
+}
+
+/** Write one bundle-derived JSON response, or a 503 if the MCP server is unreachable —
+ *  the pattern `/health` already used, generalized for `/datasets` and `/prompts`. */
+function respondWithBundle(
+  res: ServerResponse,
+  cors: Record<string, string>,
+  fn: (bundle: AgentBundle) => Promise<unknown>
+): void {
+  void bundlePromise.then(
+    async (bundle) => {
+      try {
+        const body = await fn(bundle);
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      } catch (err) {
+        res.writeHead(502, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "error", error: err instanceof Error ? err.message : String(err) }));
+      }
+    },
+    (err: unknown) => {
+      res.writeHead(503, { ...cors, "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "error", error: String(err) }));
+    }
+  );
+}
+
 const bundlePromise = buildAgent();
 
 const httpServer = createServer((req, res) => {
   const cors = {
-    "access-control-allow-origin": ALLOWED_ORIGIN,
+    "access-control-allow-origin": CLIENT_ORIGIN,
     "access-control-allow-headers": "content-type",
     "access-control-allow-methods": "POST, GET, OPTIONS",
   };
@@ -137,9 +219,9 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  const path = new URL(req.url ?? "/", `http://${HOST}:${PORT}`).pathname;
+  const path = new URL(req.url ?? "/", `http://${HOST}:${AGENT_PORT}`).pathname;
 
-  if (path === "/health") {
+  if (path === HEALTH_PATH) {
     void bundlePromise.then(
       (bundle) => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
@@ -153,7 +235,23 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  if (path === "/chat" && req.method === "POST") {
+  if (path === DATASETS_PATH && req.method === "GET") {
+    respondWithBundle(res, cors, async (bundle) => {
+      const raw = await bundle.mcpClient.callTool({ name: "list_available_datasets", arguments: {} });
+      return resultOf(raw);
+    });
+    return;
+  }
+
+  if (path === PROMPTS_PATH && req.method === "GET") {
+    respondWithBundle(res, cors, async (bundle) => {
+      const { prompts } = await bundle.mcpClient.listPrompts();
+      return { datasets: groupPrompts(prompts) };
+    });
+    return;
+  }
+
+  if (path === CHAT_PATH && req.method === "POST") {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
@@ -171,7 +269,7 @@ const httpServer = createServer((req, res) => {
           };
           const message = typeof body.message === "string" ? body.message.trim() : "";
           if (!message) throw new Error("Request body needs a non-empty `message`.");
-          const threadId = typeof body.threadId === "string" && body.threadId ? body.threadId : "default";
+          const threadId = typeof body.threadId === "string" && body.threadId ? body.threadId : DEFAULT_THREAD_ID;
           await streamChat(await bundlePromise, message, threadId, res);
         } catch (err) {
           send(res, { type: "error", message: err instanceof Error ? err.message : String(err) });
@@ -188,8 +286,8 @@ const httpServer = createServer((req, res) => {
   res.end(JSON.stringify({ error: "Not found" }));
 });
 
-httpServer.listen(PORT, HOST, () => {
-  console.error(`Agent server on http://${HOST}:${PORT}/chat`);
+httpServer.listen(AGENT_PORT, HOST, () => {
+  console.error(`Agent server on http://${HOST}:${AGENT_PORT}${CHAT_PATH}`);
   void bundlePromise.then(
     (bundle) => {
       console.error(`Tools from MCP: ${bundle.toolNames.join(", ")}`);

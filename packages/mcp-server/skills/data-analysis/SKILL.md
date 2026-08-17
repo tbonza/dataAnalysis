@@ -43,9 +43,10 @@ the chart shows them.
 
 ## Before you chart: read the values
 
-`load_data` and `inspect_dataset` both return a per-field `summary` with distinct
-values, and `inspect_dataset` adds `sampleRows` — whole rows as they actually are.
-Read them. Column names hide problems that make a chart quietly wrong:
+`load_data`, `load_available_dataset`, and `inspect_dataset` all return a per-field
+`summary` with distinct values, and `inspect_dataset` adds `sampleRows` — whole rows
+as they actually are. Read them, whichever tool loaded the data. Column names hide
+problems that make a chart quietly wrong:
 
 - **Embedded totals.** A category column may mix an aggregate level with its parts —
   an `All regions` row beside `East`/`West`, or a `Total` product. Charting both
@@ -112,4 +113,7 @@ Say so plainly, and say what would be needed. Two limits are worth knowing up fr
 - This server shapes and charts data; it does not run arbitrary code. No clustering,
   forecasting, or custom statistics. See data-query for what the grammar does cover.
 - It works on the data it has been given. If the answer needs a table nobody loaded,
-  ask for it rather than approximating from what's there.
+  check `list_available_datasets` for a packaged dataset that already covers the
+  question before asking the user to hand over their own — the **datasets** skill
+  covers what's there and how to load one. Only ask the user for data once nothing
+  packaged fits.

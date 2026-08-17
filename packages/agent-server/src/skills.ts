@@ -1,3 +1,5 @@
+import { SKILL_FILENAME, SKILLS_ROOT, SKILL_URI_PREFIX } from "./constants.js";
+
 /**
  * Load the agent's skills from the MCP server, not from disk.
  *
@@ -16,10 +18,7 @@ export interface FileData {
 
 export type SkillFiles = Record<string, FileData>;
 
-/** Where the skills middleware is told to look. */
-export const SKILLS_ROOT = "/skills/";
-
-const SKILL_URI_PREFIX = "chart://skill/";
+export { SKILLS_ROOT };
 
 /**
  * `chart://skill/data-query` becomes `/skills/data-query/SKILL.md`, and
@@ -32,7 +31,7 @@ function pathForUri(uri: string): string | undefined {
   if (!rest) return undefined;
   const slash = rest.indexOf("/");
   return slash === -1
-    ? `${SKILLS_ROOT}${rest}/SKILL.md`
+    ? `${SKILLS_ROOT}${rest}/${SKILL_FILENAME}`
     : `${SKILLS_ROOT}${rest.slice(0, slash)}/${rest.slice(slash + 1)}`;
 }
 
@@ -79,8 +78,8 @@ export async function fetchSkills(client: ResourceReader): Promise<LoadedSkills>
       created_at: stamp,
       modified_at: stamp,
     };
-    if (path.endsWith("/SKILL.md")) {
-      names.add(path.slice(SKILLS_ROOT.length, -"/SKILL.md".length));
+    if (path.endsWith(`/${SKILL_FILENAME}`)) {
+      names.add(path.slice(SKILLS_ROOT.length, -`/${SKILL_FILENAME}`.length));
     }
   }
 

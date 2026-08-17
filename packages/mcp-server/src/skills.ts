@@ -2,6 +2,13 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import {
+  REFERENCES_DIRNAME,
+  SKILL_FILENAME,
+  SKILL_URI_PREFIX,
+  SKILLS_DIRNAME,
+  ALLOWED_FRONTMATTER_FIELDS,
+} from "./constants.js";
 
 /**
  * Agent Skills loader (https://agentskills.io/specification).
@@ -12,17 +19,7 @@ import { parse as parseYaml } from "yaml";
  * approach flint-chart-mcp takes with `flint://agent-skill`.
  */
 
-/** Fields the specification permits in frontmatter. Anything else is a compliance bug. */
-export const ALLOWED_FRONTMATTER_FIELDS = [
-  "name",
-  "description",
-  "license",
-  "compatibility",
-  "metadata",
-  "allowed-tools",
-] as const;
-
-export const SKILL_URI_PREFIX = "chart://skill/";
+export { ALLOWED_FRONTMATTER_FIELDS, SKILL_URI_PREFIX };
 
 export interface SkillReference {
   /** Path relative to the skill root, e.g. "references/chart-types.md". */
@@ -45,7 +42,7 @@ export interface Skill {
   references: SkillReference[];
 }
 
-const SKILLS_DIR = fileURLToPath(new URL("../skills", import.meta.url));
+const SKILLS_DIR = fileURLToPath(new URL(`../${SKILLS_DIRNAME}`, import.meta.url));
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
@@ -66,7 +63,7 @@ export function parseSkillFile(text: string): ParsedSkillFile {
 }
 
 function readReferences(skillDir: string, skillName: string): SkillReference[] {
-  const dir = join(skillDir, "references");
+  const dir = join(skillDir, REFERENCES_DIRNAME);
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -77,8 +74,8 @@ function readReferences(skillDir: string, skillName: string): SkillReference[] {
     .filter((entry) => entry.endsWith(".md"))
     .sort()
     .map((entry) => ({
-      relativePath: `references/${entry}`,
-      uri: `${SKILL_URI_PREFIX}${skillName}/references/${entry}`,
+      relativePath: `${REFERENCES_DIRNAME}/${entry}`,
+      uri: `${SKILL_URI_PREFIX}${skillName}/${REFERENCES_DIRNAME}/${entry}`,
       text: readFileSync(join(dir, entry), "utf8"),
     }));
 }

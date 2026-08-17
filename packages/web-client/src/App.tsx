@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { Chart } from "./Chart.js";
-
-const AGENT_URL = import.meta.env["VITE_AGENT_URL"] ?? "http://127.0.0.1:3001";
+import { AGENT_URL, CHAT_PATH } from "./constants.js";
 
 /** The event shapes the agent server streams over SSE. */
 type AgentEvent =
@@ -62,7 +61,7 @@ export function App(): React.ReactElement {
     setTurns((current) => [...current, { role: "user", parts: [{ kind: "text", text: message }] }]);
 
     try {
-      const response = await fetch(`${AGENT_URL}/chat`, {
+      const response = await fetch(`${AGENT_URL}${CHAT_PATH}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message, threadId: threadId.current }),

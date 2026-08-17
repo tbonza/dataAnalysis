@@ -26,7 +26,8 @@ import {
   mul,
   div,
 } from "@uwdata/mosaic-sql";
-import { MAX_RESULT_ROWS, quoteIdent, type Dataset } from "./duckdb.js";
+import { MAX_RESULT_ROWS } from "./constants.js";
+import { quoteIdent, type Dataset } from "./duckdb.js";
 
 /**
  * The operator allowlist is data-formulator's, ported verbatim from

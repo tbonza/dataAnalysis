@@ -180,7 +180,7 @@ export function getDataset(id: string): Dataset {
   );
 }
 
-export function listDatasets(): Dataset[] {
+export function listLoadedDatasets(): Dataset[] {
   return [...datasets.values()];
 }
 

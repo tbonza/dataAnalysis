@@ -1,11 +1,9 @@
 import { MemorySaver } from "@langchain/langgraph";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { createDeepAgent } from "deepagents";
+import { MCP_URL, SERVER_NAME } from "./constants.js";
 import { createChatModel } from "./model.js";
 import { SKILLS_ROOT, fetchSkills, type SkillFiles } from "./skills.js";
-
-const MCP_URL = process.env.MCP_URL ?? "http://127.0.0.1:3000/mcp";
-const SERVER_NAME = "chart";
 
 /**
  * The system prompt is deliberately short.
@@ -27,12 +25,29 @@ const SYSTEM_PROMPT = [
   "for themselves.",
 ].join("\n");
 
+/**
+ * The two calls the `/datasets` and `/prompts` routes need, narrowed the same way
+ * `skills.ts`'s `ResourceReader` is — so callers of `AgentBundle` take no type
+ * dependency on the MCP SDK beyond what they actually use.
+ */
+export interface McpToolClient {
+  callTool: (params: {
+    name: string;
+    arguments?: Record<string, unknown>;
+  }) => Promise<{ structuredContent?: unknown; content?: unknown[] }>;
+  listPrompts: () => Promise<{
+    prompts: Array<{ name: string; title?: string; description?: string; _meta?: Record<string, unknown> }>;
+  }>;
+}
+
 export interface AgentBundle {
   agent: Awaited<ReturnType<typeof createDeepAgent>>;
   /** Passed into every invocation as the virtual filesystem holding the skills. */
   skillFiles: SkillFiles;
   skillNames: string[];
   toolNames: string[];
+  /** For routes that need to call the MCP server directly, with no model involved. */
+  mcpClient: McpToolClient;
   close: () => Promise<void>;
 }
 
@@ -69,6 +84,11 @@ export async function buildAgent(): Promise<AgentBundle> {
     skillFiles: files,
     skillNames: names,
     toolNames: tools.map((tool) => tool.name),
+    // `Client`'s real `callTool` return type is a wider union (it also covers a
+    // `toolResult`-shaped variant this codebase never produces or reads), which
+    // trips TS's weak-type check against our all-optional narrow interface — the
+    // same bridge `cli.ts`'s `resultOf` cast makes at its own call site.
+    mcpClient: client as unknown as McpToolClient,
     close: () => mcp.close(),
   };
 }
