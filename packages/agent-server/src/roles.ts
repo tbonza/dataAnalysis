@@ -1,5 +1,6 @@
 import type { McpToolClient } from "./agent.js";
-import { RECOMMENDED_PROMPT_KIND, ROLE_MAX_CHARS, roleFraming } from "./constants.js";
+import { ROLE_MAX_CHARS, roleFraming } from "./constants.js";
+import { recommendedPrompts } from "./library.js";
 
 /**
  * Turning a client-supplied role name into a framing sentence for the model.
@@ -44,10 +45,8 @@ export function knownRoles(client: McpToolClient): Promise<Set<string>> {
 
   const pending = client.listPrompts().then(({ prompts }) => {
     const names = new Set<string>();
-    for (const prompt of prompts) {
-      const meta = prompt._meta ?? {};
-      if (meta["kind"] !== RECOMMENDED_PROMPT_KIND) continue;
-      const role = meta["role"];
+    for (const prompt of recommendedPrompts(prompts)) {
+      const role = prompt._meta?.["role"];
       if (typeof role === "string" && role.length > 0) names.add(role);
     }
     return names;

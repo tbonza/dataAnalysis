@@ -51,13 +51,15 @@ export interface ParsedSkillFile {
   body: string;
 }
 
-/** Split `---` frontmatter from the body. Exported so the compliance test uses the same parser. */
+/** Split `---` frontmatter from the body. Exported so the compliance test uses the same
+ *  parser — and so does `prompts.ts` for role reference docs, which is why these messages
+ *  say "skill file" rather than naming SKILL.md. */
 export function parseSkillFile(text: string): ParsedSkillFile {
   const match = FRONTMATTER.exec(text);
-  if (!match) throw new Error("SKILL.md must begin with `---` YAML frontmatter.");
+  if (!match) throw new Error("A skill file must begin with `---` YAML frontmatter.");
   const parsed: unknown = parseYaml(match[1] ?? "");
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("SKILL.md frontmatter must be a YAML mapping.");
+    throw new Error("Skill file frontmatter must be a YAML mapping.");
   }
   return { frontmatter: parsed as Record<string, unknown>, body: match[2] ?? "" };
 }
@@ -99,9 +101,9 @@ export function loadSkills(): Skill[] {
     const skillDir = join(SKILLS_DIR, directory);
     let text: string;
     try {
-      text = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+      text = readFileSync(join(skillDir, SKILL_FILENAME), "utf8");
     } catch {
-      continue; // A directory without SKILL.md is not a skill.
+      continue; // A directory without a SKILL.md is not a skill.
     }
 
     const { frontmatter, body } = parseSkillFile(text);

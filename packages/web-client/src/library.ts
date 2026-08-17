@@ -1,4 +1,4 @@
-import { AGENT_URL, PROMPTS_PATH } from "./constants.js";
+import { AGENT_URL, DEFAULT_ROLE_SLUG, PROMPTS_PATH } from "./constants.js";
 
 /** The shape `GET /prompts` returns: the executive prompt library, dataset -> role -> prompt. */
 
@@ -44,6 +44,15 @@ export function rolesAcross(datasets: DatasetGroup[]): RoleView[] {
     }
   }
   return [...bySlug.values()];
+}
+
+/** The role a visitor starts as: `DEFAULT_ROLE_SLUG` when the library has it, otherwise
+ *  whichever role comes first, otherwise none. Preferring a named slug over "the first
+ *  one" keeps the default stable if the library's order ever changes. */
+export function defaultRoleSlug(datasets: DatasetGroup[]): string {
+  const roles = rolesAcross(datasets);
+  const preferred = roles.find((view) => view.roleSlug === DEFAULT_ROLE_SLUG);
+  return preferred?.roleSlug ?? roles[0]?.roleSlug ?? "";
 }
 
 /** Fetch the library once. Any failure resolves to `[]` — the app degrades to a plain

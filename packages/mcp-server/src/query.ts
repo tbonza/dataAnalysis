@@ -20,7 +20,6 @@ import {
   neq,
   not,
   sql,
-  sum,
   add,
   sub,
   mul,

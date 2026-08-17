@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from "node:http";
 import { isBaseMessage, type AIMessage, type ToolMessage } from "@langchain/core/messages";
-import { buildAgent, type AgentBundle, type McpToolClient } from "./agent.js";
+import { buildAgent, type AgentBundle } from "./agent.js";
 import {
   AGENT_PORT,
   CHAT_PATH,
@@ -10,10 +10,10 @@ import {
   HEALTH_PATH,
   HOST,
   PROMPTS_PATH,
-  RECOMMENDED_PROMPT_KIND,
   RECURSION_LIMIT,
   TOOL_DETAIL_MAX_CHARS,
 } from "./constants.js";
+import { groupPrompts, resultOf } from "./library.js";
 import { frameForRole } from "./roles.js";
 
 type Event =
@@ -146,106 +146,6 @@ function detailOf(args: unknown): string | undefined {
   const json = JSON.stringify(args);
   if (!json || json === "{}") return undefined;
   return json.length > TOOL_DETAIL_MAX_CHARS ? `${json.slice(0, TOOL_DETAIL_MAX_CHARS)}…` : json;
-}
-
-/** Pull the structured payload out of a tool result, falling back to text blocks —
- *  the same fallback mcp-server's own `cli.ts` uses. */
-function resultOf(result: { structuredContent?: unknown; content?: unknown[] }): unknown {
-  if (result.structuredContent !== undefined) return result.structuredContent;
-  return textOf(result.content);
-}
-
-interface GroupedPrompts {
-  dataset: string;
-  /** The catalog's description of the dataset, minus its agent-routing "Use when…"
-   *  clause; empty if the catalog lacks it. */
-  description: string;
-  roles: Array<{
-    role: string;
-    roleSlug: string;
-    /** One user-facing paragraph on the role — shown under the role name. */
-    description: string;
-    prompts: Array<{ name: string; title: string; text: string }>;
-  }>;
-}
-
-/** Skill and dataset descriptions are written for an agent and end with a routing
- *  clause ("… Use when a question is about …"). The picker wants only the part before
- *  it: what the thing *is*. */
-function userFacing(description: string): string {
-  const cut = description.search(/\bUse (when|before|whenever)\b/i);
-  return (cut === -1 ? description : description.slice(0, cut)).trim();
-}
-
-/** `list_available_datasets`' catalog as a name -> description map. Anything that isn't
- *  the expected `{ datasets: [{ name, description }] }` shape yields an empty map, so a
- *  catalog hiccup thins the picker's captions rather than failing the whole route. */
-async function datasetDescriptions(client: McpToolClient): Promise<Map<string, string>> {
-  const raw = resultOf(await client.callTool({ name: "list_available_datasets", arguments: {} }));
-  const out = new Map<string, string>();
-  if (typeof raw !== "object" || raw === null) return out;
-  const list = (raw as { datasets?: unknown }).datasets;
-  if (!Array.isArray(list)) return out;
-  for (const entry of list as Array<{ name?: unknown; description?: unknown }>) {
-    if (typeof entry.name === "string" && typeof entry.description === "string") {
-      out.set(entry.name, userFacing(entry.description));
-    }
-  }
-  return out;
-}
-
-/** The first text block of a `getPrompt` result — the same text `promptNameFor`'s
- *  registration on the MCP server hands to a model, so the picker inserts exactly
- *  what running the prompt in Claude Code would. */
-function firstTextOf(result: { messages: Array<{ content: { type: string; text?: string } }> }): string {
-  const block = result.messages.find((m) => m.content.type === "text");
-  return block?.content.text ?? "";
-}
-
-/** `listPrompts()`'s recommended-prompt entries, with each one's real text fetched via
- *  `getPrompt`, grouped dataset -> role -> prompt — the shape the web picker renders. */
-async function groupPrompts(client: McpToolClient): Promise<GroupedPrompts[]> {
-  const { prompts } = await client.listPrompts();
-  const recommended = prompts.filter((p) => p._meta && p._meta["kind"] === RECOMMENDED_PROMPT_KIND);
-  const descriptions = await datasetDescriptions(client);
-
-  const byDataset = new Map<string, Map<string, GroupedPrompts["roles"][number]>>();
-
-  // Sequential rather than Promise.all: keeps each role's prompts in the library's
-  // authored order instead of whichever `getPrompt` call happens to resolve first.
-  for (const prompt of recommended) {
-    const meta = prompt._meta ?? {};
-    const dataset = meta["dataset"];
-    const role = meta["role"];
-    const roleSlug = meta["roleSlug"];
-    const roleBrief = meta["roleBrief"];
-    if (typeof dataset !== "string" || typeof role !== "string" || typeof roleSlug !== "string") continue;
-
-    const text = firstTextOf(await client.getPrompt({ name: prompt.name }));
-
-    let roles = byDataset.get(dataset);
-    if (!roles) {
-      roles = new Map();
-      byDataset.set(dataset, roles);
-    }
-    let entry = roles.get(roleSlug);
-    if (!entry) {
-      entry = {
-        role,
-        roleSlug,
-        description: typeof roleBrief === "string" ? roleBrief : "",
-        prompts: [],
-      };
-      roles.set(roleSlug, entry);
-    }
-    entry.prompts.push({ name: prompt.name, title: prompt.title ?? prompt.name, text });
-  }
-
-  return [...byDataset.entries()].map(([dataset, roles]) => ({
-    dataset,
-    description: descriptions.get(dataset) ?? "",
-    roles: [...roles.values()],
-  }));
 }
 
 /** Write one bundle-derived JSON response, or a 503 if the MCP server is unreachable —

@@ -144,42 +144,6 @@ summary:focus-visible {
   color: var(--muted);
 }
 
-/* The five executives, opening the page: this app's organizing idea is who is asking,
-   so it is what a first-time visitor sees rather than something behind a control. */
-.ask-as {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.role-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-button.role-pill {
-  background: var(--paper);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.3rem 0.75rem;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-}
-
-button.role-pill:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-button.role-pill[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
 article {
   margin-bottom: 1.25rem;
 }
@@ -424,10 +388,10 @@ dialog.drawer::backdrop {
   font-weight: 600;
 }
 
-/* One dropdown, not five rows to scan. The empty state's pills already show the whole
-   cast, so this only has to make switching easy — hence input-weight styling on the one
-   control in the panel. */
-.role-select {
+/* One picker, not a list to scan. Input-weight styling, since it is the only control in
+   the panel and the thing you type into. */
+.combobox {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -435,7 +399,7 @@ dialog.drawer::backdrop {
   color: var(--muted);
 }
 
-.role-select select {
+.combobox input {
   font: inherit;
   font-size: 0.95rem;
   font-weight: 600;
@@ -446,9 +410,52 @@ dialog.drawer::backdrop {
   background: var(--paper);
 }
 
-.role-select select:focus-visible {
+.combobox input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.combobox ul {
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 14rem;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px var(--backdrop);
+}
+
+.combobox li {
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* One highlight for both the pointer and the keyboard: `active` follows arrow keys and
+   hover alike, so there is never a second, competing cursor. */
+.combobox li.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.combobox li[aria-selected="true"]::after {
+  content: "✓";
+  float: right;
+  color: var(--accent);
+}
+
+.combobox li.combobox-empty {
+  color: var(--muted);
+  cursor: default;
 }
 
 .role-detail {

@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Combobox, type ComboboxOption } from "./Combobox.js";
 import {
   DRAWER_CLOSE_LABEL,
   DRAWER_EMPTY,
   DRAWER_TITLE,
   ROLE_ANY_LABEL,
-  ROLE_HEADING,
+  ROLE_LABEL,
+  ROLE_NO_MATCH,
   ROLE_PICK_HINT,
+  ROLE_SEARCH_PLACEHOLDER,
 } from "./constants.js";
 import { rolesAcross, type DatasetGroup } from "./library.js";
 
@@ -13,10 +16,9 @@ import { rolesAcross, type DatasetGroup } from "./library.js";
  * The left flyout: the executive prompt library as a native `<dialog>` docked to the left
  * edge. `showModal()` gives focus trap, Esc-to-close, backdrop and focus-return for free.
  *
- * One dropdown scopes the panel to a single role's questions. Listing every role at once
- * made the panel something to scan rather than something to use — and the full cast is
- * already on show in the empty state, so the drawer doesn't have to carry that job.
- * Picking a question hands its text and its role to the caller and nothing else.
+ * A type-to-filter picker scopes the panel to one role's questions. Listing every role at
+ * once made the panel something to scan rather than something to use. Picking a question
+ * hands its text and its role to the caller and nothing else.
  */
 export function RolesDrawer({
   open,
@@ -38,8 +40,20 @@ export function RolesDrawer({
   onClose: () => void;
 }): React.ReactElement {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   const roles = useMemo(() => rolesAcross(datasets), [datasets]);
   const selected = roles.find((view) => view.roleSlug === role);
+
+  const options = useMemo<ComboboxOption[]>(
+    () => [
+      // "" is a real state, not a placeholder: it means answer plainly, which is what the
+      // agent does when no role is named.
+      { value: "", label: ROLE_ANY_LABEL },
+      ...roles.map((view) => ({ value: view.roleSlug, label: view.role })),
+    ],
+    [roles]
+  );
 
   // Guard on `dialog.open` both ways: closing fires the native `close` event, which calls
   // `onClose`, which sets `open=false` — without the guard that would call `close()` on an
@@ -63,7 +77,7 @@ export function RolesDrawer({
 
   // Close first, then hand over the text: closing restores focus to whatever opened the
   // drawer, and the caller wants to move focus to the composer *after* that.
-  const pick = (text: string, roleSlug: string) => {
+  const pick = (text: string, roleSlug: string): void => {
     dialog.current?.close();
     onPick(text, roleSlug);
   };
@@ -73,6 +87,11 @@ export function RolesDrawer({
       ref={dialog}
       className="drawer"
       aria-label={DRAWER_TITLE}
+      // While the picker's list is open, Escape belongs to the list. The Combobox stops
+      // the key event, but browsers that raise the close request anyway land here.
+      onCancel={(event) => {
+        if (pickerOpen) event.preventDefault();
+      }}
       // The dialog itself has no padding, so a click whose target is the dialog element
       // (not a descendant) can only be on the backdrop.
       onClick={(event) => {
@@ -91,19 +110,15 @@ export function RolesDrawer({
           <p className="hint">{DRAWER_EMPTY}</p>
         ) : (
           <>
-            <label className="role-select">
-              <span>{ROLE_HEADING}</span>
-              <select value={role} onChange={(event) => onRoleChange(event.target.value)}>
-                {/* "" is a real state, not a placeholder: it means answer plainly, which
-                    is what the agent does when no role is named. */}
-                <option value="">{ROLE_ANY_LABEL}</option>
-                {roles.map((view) => (
-                  <option key={view.roleSlug} value={view.roleSlug}>
-                    {view.role}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Combobox
+              options={options}
+              value={role}
+              onChange={onRoleChange}
+              onOpenChange={setPickerOpen}
+              label={ROLE_LABEL}
+              placeholder={ROLE_SEARCH_PLACEHOLDER}
+              emptyLabel={ROLE_NO_MATCH}
+            />
 
             {!selected ? (
               <p className="hint">{ROLE_PICK_HINT}</p>

@@ -73,27 +73,26 @@ pnpm agent    # 2. the deep agent        → :3001   (needs AWS credentials)
 pnpm web      # 3. the chat client       → :5173
 ```
 
-Open <http://127.0.0.1:5173>. The first screen names the packaged data that's ready
-and asks **who's asking** — one button per executive role. Picking one sets the role
-for the next question and nothing else.
+Open <http://127.0.0.1:5173>. The first screen names the packaged data that's ready,
+and you start as the **Chief Executive Officer** — shown on a chip above the composer,
+which is also the only way into the left flyout.
 
-The role rides on the composer as a chip, which is also the only way into the left
-flyout: click it (or the *Suggested questions* it shows before you've chosen a role)
-and a dropdown scopes the panel to one role — its one-line brief and its suggested
-questions written out in full. Click a question and its text fills the composer,
-editable — nothing sends until you press Enter or Send. The pills, the dropdown and
-the chip are the same setting, so changing any one of them moves the other two. Type
-your own question instead if you prefer.
+Click the chip and a picker scopes the panel to one role, with that role's one-line
+brief and its suggested questions written out in full. The picker filters as you type,
+and matches anywhere in the name, so `fin` finds the Chief Financial Officer where a
+plain dropdown would need you to get past "Chief". Enter takes the highlighted match.
+Click a question and its text fills the composer, editable — nothing sends until you
+press Enter or Send. Type your own question instead if you prefer.
 
 Whatever the chip shows is sent with the message, so the agent frames its answer the
 way that executive wants it — a CFO gets the margin read, a CEO gets the one-sentence
-version. Clear the chip with `×` to go back to a plain answer. Either way you get a
-chart with no data pasted into chat, and a follow-up like *"make the bars green"*
-exercises the restyle path. The agent's tool calls fold into one collapsed *N steps*
-line per turn — open it to see each call and its arguments; text and charts stay
-inline. The flyout is served by `GET :3001/prompts`, which groups the MCP server's
-prompt library by dataset then role; `GET :3001/datasets` proxies the catalog the same
-way.
+version. Pick *Anyone* in the picker, or clear the chip with `×`, to go back to an
+unframed answer. Either way you get a chart with no data pasted into chat, and a
+follow-up like *"make the bars green"* exercises the restyle path. The agent's tool
+calls fold into one collapsed *N steps* line per turn — open it to see each call and
+its arguments; text and charts stay inline. The flyout is served by `GET
+:3001/prompts`, which groups the MCP server's prompt library by dataset then role;
+`GET :3001/datasets` proxies the catalog the same way.
 
 If the agent server reports an expired token, refresh your credentials (e.g. `aws sso
 login`) **and restart the agent server** — it resolves credentials once at startup, so a
