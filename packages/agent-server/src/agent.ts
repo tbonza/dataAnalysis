@@ -1,3 +1,4 @@
+import { MemorySaver } from "@langchain/langgraph";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { createDeepAgent } from "deepagents";
 import { createChatModel } from "./model.js";
@@ -57,6 +58,10 @@ export async function buildAgent(): Promise<AgentBundle> {
     // deepagents ships a filesystem toolset. The agent needs `read_file` for skills;
     // it has no reason to write, so writing is denied rather than left available.
     permissions: [{ operations: ["write"], paths: ["/**"], mode: "deny" }],
+    // Without a checkpointer every request is a fresh run, so a follow-up like "make
+    // the bars green" would have no chart to restyle. Keyed by thread id from the
+    // client. In memory, so history dies with the process — fine for a demo.
+    checkpointer: new MemorySaver(),
   });
 
   return {

@@ -33,6 +33,9 @@ export function App(): React.ReactElement {
   const [draft, setDraft] = useState(EXAMPLE);
   const [busy, setBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  // One thread for the page's lifetime, so a follow-up like "make the bars green" can
+  // see the chart the previous turn made.
+  const threadId = useRef(crypto.randomUUID());
 
   const appendPart = useCallback((part: Turn["parts"][number]) => {
     setTurns((current) => {
@@ -62,7 +65,7 @@ export function App(): React.ReactElement {
       const response = await fetch(`${AGENT_URL}/chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, threadId: threadId.current }),
       });
       if (!response.body) throw new Error("The agent server returned no stream.");
 

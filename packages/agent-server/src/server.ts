@@ -70,12 +70,22 @@ function textOf(content: unknown): string {
   return "";
 }
 
-async function streamChat(bundle: AgentBundle, message: string, res: ServerResponse): Promise<void> {
+async function streamChat(
+  bundle: AgentBundle,
+  message: string,
+  threadId: string,
+  res: ServerResponse
+): Promise<void> {
   const seenCharts = new Set<string>();
 
   const stream = await bundle.agent.stream(
     { messages: [{ role: "user", content: message }], files: bundle.skillFiles },
-    { streamMode: "updates", recursionLimit: 50 }
+    {
+      streamMode: "updates",
+      recursionLimit: 50,
+      // The thread is what makes a follow-up turn see the previous one's charts.
+      configurable: { thread_id: threadId },
+    }
   );
 
   for await (const update of stream) {
@@ -155,10 +165,14 @@ const httpServer = createServer((req, res) => {
           connection: "keep-alive",
         });
         try {
-          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { message?: unknown };
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+            message?: unknown;
+            threadId?: unknown;
+          };
           const message = typeof body.message === "string" ? body.message.trim() : "";
           if (!message) throw new Error("Request body needs a non-empty `message`.");
-          await streamChat(await bundlePromise, message, res);
+          const threadId = typeof body.threadId === "string" && body.threadId ? body.threadId : "default";
+          await streamChat(await bundlePromise, message, threadId, res);
         } catch (err) {
           send(res, { type: "error", message: err instanceof Error ? err.message : String(err) });
         } finally {

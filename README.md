@@ -1,0 +1,178 @@
+# Chart MCP demo
+
+An MCP tool for data analysis and charting, plus a reference agent and chat client that
+consume it.
+
+The **MCP server is the product**. It has no model of its own: a consuming agent
+authors query and chart specs, and the server executes, validates and compiles them.
+Everything an agent needs to know is in the tool schemas and the six **Agent Skills**
+the server exposes as MCP resources — so any team's existing agent can use it without
+inheriting anything from the agent in this repo.
+
+Built on [flint-chart](https://github.com/microsoft/flint-chart) for chart compilation
+and [DuckDB-WASM](https://github.com/duckdb/duckdb-wasm) for data, with the analyst
+behaviour adapted from
+[data-formulator](https://github.com/microsoft/data-formulator).
+
+```
+packages/mcp-server     the product — DuckDB + flint + skills. No LLM, no credentials.
+packages/agent-server   a deep agent whose only capability is the MCP tool.
+packages/web-client     chat UI that renders the returned specs inline.
+```
+
+## Requirements
+
+- **Node 20+** (developed on 26) and **pnpm 10** (`packageManager` pins 10.29.2)
+- **AWS credentials with Bedrock access** — only for the agent server. The MCP server
+  and its whole test suite run without them.
+
+## Install
+
+```bash
+pnpm install
+```
+
+## Run the MCP server on its own
+
+This is the interesting path: the full tool surface works with **no model and no
+credentials**.
+
+```bash
+pnpm mcp        # http://127.0.0.1:3000/mcp
+```
+
+In a second shell, drive it end to end:
+
+```bash
+pnpm --filter mcp-server cli
+```
+
+That walks `load_data` → `query` → `create_chart` → `prepare_restyle` /
+`apply_restyle` → `create_report`, printing the generated SQL, the compiled Vega-Lite
+spec, and the repairable errors a consuming agent relies on. `curl -s
+http://127.0.0.1:3000/health` lists the loaded skills.
+
+## Run the whole demo
+
+Three shells, in order.
+
+```bash
+pnpm mcp      # 1. the MCP tool          → :3000
+pnpm agent    # 2. the deep agent        → :3001   (needs AWS credentials)
+pnpm web      # 3. the chat client       → :5173
+```
+
+Open <http://127.0.0.1:5173> and ask for a chart. The prefilled example describes a
+small sales table and asks for revenue by region; a follow-up like *"make the bars
+green"* exercises the restyle path.
+
+If the agent server reports an expired token, refresh your credentials (e.g. `aws sso
+login`) **and restart the agent server** — it resolves credentials once at startup, so a
+running process keeps using the stale ones. `curl -s http://127.0.0.1:3001/health` shows
+which tools and skills it picked up from the MCP server.
+
+To drive the agent without the browser, `POST /chat` and read the SSE stream. Reuse a
+`threadId` across turns — that is what lets a follow-up restyle find the previous turn's
+chart:
+
+```bash
+curl -sN -X POST http://127.0.0.1:3001/chat -H 'content-type: application/json' \
+  -d '{"message":"East 200 revenue, West 250, North 90. Chart revenue by region.","threadId":"t1"}'
+
+curl -sN -X POST http://127.0.0.1:3001/chat -H 'content-type: application/json' \
+  -d '{"message":"Make the bars green.","threadId":"t1"}'
+```
+
+Events are `{type: "text" | "tool" | "chart" | "report" | "error" | "done"}`; a `chart`
+event carries the `vlSpec` to render. History is in memory, so it resets when the process
+does.
+
+## Point your own agent at it
+
+This is what the demo is for. The server speaks streamable HTTP at
+`http://127.0.0.1:3000/mcp`. For Claude Code:
+
+```bash
+claude mcp add --transport http chart http://127.0.0.1:3000/mcp
+```
+
+Then tell your agent to read `chart://skill/data-analysis` and go. It needs nothing
+from `packages/agent-server` — if it did, the skills would be incomplete.
+
+DNS-rebinding guards are armed, so requests must come from a localhost origin.
+
+## The skills
+
+Skills live in `packages/mcp-server/skills/` and are served as resources under
+`chart://skill/<name>`, each with a matching prompt. Detail sits in `references/`
+subdirectories, exposed as their own resources, so an agent loads it only when needed.
+
+| Skill | Covers |
+|---|---|
+| `data-analysis` | The loop: inspect before charting, how many charts a question deserves, when to stop |
+| `data-query` | The QuerySpec grammar — and what it deliberately cannot do |
+| `chart-author` | Picking a chart type, mapping channels, semantic types |
+| `chart-restyle` | Appearance-only edits, and the follow-up control contract |
+| `theme-author` | Presets and brand overrides for a consistent look |
+| `report` | Assembling prose and existing charts into one document |
+
+They follow the [Agent Skills specification](https://agentskills.io/specification), and
+a test enforces it: name matching its directory, no frontmatter fields outside the
+permitted set, bodies under 500 lines, and every relative link resolving.
+
+## Tests and checks
+
+```bash
+pnpm test        # 93 tests; needs no credentials
+pnpm typecheck   # all three packages
+```
+
+The suite covers query compilation and validation, the DuckDB round trip, chart-type
+resolution and flint assembly, the `configUI` sanitizer's prototype-pollution guards,
+and skill compliance. One test is a security regression: it asserts that
+`read_csv_auto('/etc/hosts')` is refused.
+
+## Configuration
+
+| Variable | Default | Used by |
+|---|---|---|
+| `PORT` | `3000` | mcp-server |
+| `MCP_URL` | `http://127.0.0.1:3000/mcp` | cli, agent-server |
+| `AGENT_PORT` | `3001` | agent-server |
+| `CLIENT_ORIGIN` | `http://127.0.0.1:5173` | agent-server (CORS) |
+| `VITE_AGENT_URL` | `http://127.0.0.1:3001` | web-client |
+| `BEDROCK_MODEL_ID` | `us.anthropic.claude-sonnet-5` | agent-server |
+| `AWS_REGION` | `us-east-1` | agent-server |
+
+Credentials come from the default AWS provider chain — environment, SSO, profile, or
+instance role.
+
+## How it works, and what it will not do
+
+**Data.** Rows are loaded inline and become a queryable dataset. Transforms are
+declared as a structured `QuerySpec` — filter, group, aggregate, one arithmetic step,
+sort, limit — which is compiled to SQL with
+[mosaic-sql](https://idl.uw.edu/mosaic/api/sql/). Every result registers as a new
+dataset, so multi-step work is a chain of queries.
+
+Accepting no SQL text is a security property, not just ergonomics: a query cannot name
+a table function, so `read_csv_auto('/etc/passwd')` is unreachable by construction.
+That matters because the WASM sandbox does **not** contain filesystem access — this
+build's Node runtime implements file opens with `fs.openSync` — so DuckDB's own
+`enable_external_access=false` is set as well.
+
+**Charts.** flint-chart compiles a semantic chart spec into Vega-Lite, making layout,
+colour and formatting decisions from the semantic types. Neither server renders: they
+return JSON and the client rasterizes, which is what lets the same spec become a PNG, an
+SVG, or a slide.
+
+**Deliberately absent:**
+
+- **No code execution.** Upstream's analyst writes Python in a sandbox; this replaces
+  that with the query grammar. Clustering, forecasting and custom statistics are
+  therefore unsupported, and the `data-query` skill says so rather than letting an agent
+  discover it.
+- **No joins.** One dataset per query; chaining covers multi-step aggregation.
+- **No file or URL ingestion.** Inline rows only, which keeps the filesystem out of the
+  picture.
+- **Nothing persists.** Datasets and charts live in memory and die with the process.
