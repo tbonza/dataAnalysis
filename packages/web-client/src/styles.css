@@ -10,10 +10,28 @@
   --danger: #9b2226;
   --danger-soft: #fdf1f1;
   --danger-line: #f3d3d3;
+  --backdrop: rgba(28, 28, 26, 0.28);
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --radius: 0.6rem;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  color-scheme: light;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18191b;
+    --paper: #212225;
+    --ink: #ecece9;
+    --muted: #9c9c96;
+    --line: #34353850;
+    --line-strong: #4a4b4f;
+    --accent: #2dd4bf;
+    --accent-soft: #163330;
+    --danger: #f2887f;
+    --danger-soft: #2e1a1a;
+    --danger-line: #4a2626;
+    --backdrop: rgba(0, 0, 0, 0.5);
+  }
 }
 
 * {
@@ -284,7 +302,7 @@ dialog.drawer {
 }
 
 dialog.drawer::backdrop {
-  background: rgba(28, 28, 26, 0.28);
+  background: var(--backdrop);
 }
 
 @media (prefers-reduced-motion: no-preference) {
