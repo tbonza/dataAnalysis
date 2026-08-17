@@ -2,6 +2,13 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import {
+  REFERENCES_DIRNAME,
+  SKILL_FILENAME,
+  SKILL_URI_PREFIX,
+  SKILLS_DIRNAME,
+  ALLOWED_FRONTMATTER_FIELDS,
+} from "./constants.js";
 
 /**
  * Agent Skills loader (https://agentskills.io/specification).
@@ -12,17 +19,7 @@ import { parse as parseYaml } from "yaml";
  * approach flint-chart-mcp takes with `flint://agent-skill`.
  */
 
-/** Fields the specification permits in frontmatter. Anything else is a compliance bug. */
-export const ALLOWED_FRONTMATTER_FIELDS = [
-  "name",
-  "description",
-  "license",
-  "compatibility",
-  "metadata",
-  "allowed-tools",
-] as const;
-
-export const SKILL_URI_PREFIX = "chart://skill/";
+export { ALLOWED_FRONTMATTER_FIELDS, SKILL_URI_PREFIX };
 
 export interface SkillReference {
   /** Path relative to the skill root, e.g. "references/chart-types.md". */
@@ -45,7 +42,7 @@ export interface Skill {
   references: SkillReference[];
 }
 
-const SKILLS_DIR = fileURLToPath(new URL("../skills", import.meta.url));
+const SKILLS_DIR = fileURLToPath(new URL(`../${SKILLS_DIRNAME}`, import.meta.url));
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
@@ -54,19 +51,21 @@ export interface ParsedSkillFile {
   body: string;
 }
 
-/** Split `---` frontmatter from the body. Exported so the compliance test uses the same parser. */
+/** Split `---` frontmatter from the body. Exported so the compliance test uses the same
+ *  parser — and so does `prompts.ts` for role reference docs, which is why these messages
+ *  say "skill file" rather than naming SKILL.md. */
 export function parseSkillFile(text: string): ParsedSkillFile {
   const match = FRONTMATTER.exec(text);
-  if (!match) throw new Error("SKILL.md must begin with `---` YAML frontmatter.");
+  if (!match) throw new Error("A skill file must begin with `---` YAML frontmatter.");
   const parsed: unknown = parseYaml(match[1] ?? "");
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("SKILL.md frontmatter must be a YAML mapping.");
+    throw new Error("Skill file frontmatter must be a YAML mapping.");
   }
   return { frontmatter: parsed as Record<string, unknown>, body: match[2] ?? "" };
 }
 
 function readReferences(skillDir: string, skillName: string): SkillReference[] {
-  const dir = join(skillDir, "references");
+  const dir = join(skillDir, REFERENCES_DIRNAME);
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -77,8 +76,8 @@ function readReferences(skillDir: string, skillName: string): SkillReference[] {
     .filter((entry) => entry.endsWith(".md"))
     .sort()
     .map((entry) => ({
-      relativePath: `references/${entry}`,
-      uri: `${SKILL_URI_PREFIX}${skillName}/references/${entry}`,
+      relativePath: `${REFERENCES_DIRNAME}/${entry}`,
+      uri: `${SKILL_URI_PREFIX}${skillName}/${REFERENCES_DIRNAME}/${entry}`,
       text: readFileSync(join(dir, entry), "utf8"),
     }));
 }
@@ -102,9 +101,9 @@ export function loadSkills(): Skill[] {
     const skillDir = join(SKILLS_DIR, directory);
     let text: string;
     try {
-      text = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+      text = readFileSync(join(skillDir, SKILL_FILENAME), "utf8");
     } catch {
-      continue; // A directory without SKILL.md is not a skill.
+      continue; // A directory without a SKILL.md is not a skill.
     }
 
     const { frontmatter, body } = parseSkillFile(text);

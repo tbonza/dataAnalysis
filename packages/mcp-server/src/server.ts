@@ -1,13 +1,21 @@
 import { createServer } from "node:http";
-import {
-  localhostHostValidation,
-  localhostOriginValidation,
-  toNodeHandler,
-} from "@modelcontextprotocol/node";
+import { hostHeaderValidation, originValidation, toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
 import { buildChart, getChart, listChartTypes, listThemes } from "./chart.js";
+import {
+  ALLOWED_HOSTS,
+  ALLOWED_ORIGINS,
+  HEALTH_PATH,
+  HOST,
+  MCP_PATH,
+  MCP_SERVER_NAME,
+  MCP_SERVER_VERSION,
+  PORT,
+  QUERY_PREVIEW_ROWS,
+} from "./constants.js";
+import { buildCatalog, datasetsSkill, loadDatasetRows } from "./datasets.js";
 import {
   execSql,
   getDataset,
@@ -16,6 +24,7 @@ import {
   sampleRows,
   summarizeDataset,
 } from "./duckdb.js";
+import { buildPromptLibrary, jobRoles, promptMetaFor, promptNameFor } from "./prompts.js";
 import { QuerySpec, compileQuery } from "./query.js";
 import { ReportRequest, createReport } from "./report.js";
 import { applyRestyle, prepareRestyle } from "./restyle.js";
@@ -32,11 +41,30 @@ import {
 import { loadSkills } from "./skills.js";
 import { validateChart } from "./validate.js";
 
-const PORT = Number(process.env.PORT ?? 3000);
-const HOST = "127.0.0.1";
-
 // Read once: `createMcpHandler` builds a server per request.
 const SKILLS = loadSkills();
+const CATALOG = buildCatalog(datasetsSkill(SKILLS));
+const DATASET_NAMES = CATALOG.map((entry) => entry.name);
+
+// `load_available_dataset` mints a fresh table on every call unless memoized here —
+// this map lives outside `buildServer` so it survives across the per-request server
+// instances `createMcpHandler` builds.
+const loadedDatasetIds = new Map<string, string>();
+
+const PROMPT_LIBRARY = buildPromptLibrary(jobRoles(SKILLS));
+
+// Two prompts minting the same MCP prompt name would silently overwrite one another
+// in the registry, so this is a startup failure rather than a runtime surprise.
+{
+  const seen = new Map<string, string>();
+  for (const prompt of PROMPT_LIBRARY) {
+    const name = promptNameFor(prompt);
+    const label = `${prompt.role} / ${prompt.dataset} / ${prompt.title}`;
+    const clash = seen.get(name);
+    if (clash) throw new Error(`Prompt name "${name}" collides: "${clash}" and "${label}".`);
+    seen.set(name, label);
+  }
+}
 
 const INSTRUCTIONS = [
   "Data analysis and charting over tabular data. Deterministic: this server has no model of its own —",
@@ -46,6 +74,20 @@ const INSTRUCTIONS = [
   "its own, so multi-step work is a sequence of queries. create_chart returns a Vega-Lite spec as JSON;",
   "rendering is the client's job, not this server's.",
   "",
+  ...(DATASET_NAMES.length
+    ? [
+        "Before asking the user for data, check list_available_datasets -> load_available_dataset for a",
+        "packaged dataset that already covers the question.",
+        "",
+      ]
+    : []),
+  ...(PROMPT_LIBRARY.length
+    ? [
+        "If the user identifies as a role (CEO, CFO, CRO, CPO, COO, ...), the job-roles skill has that",
+        "role's framing — read it before answering.",
+        "",
+      ]
+    : []),
   "Read the relevant skill resource before authoring anything: " +
     (SKILLS.length ? SKILLS.map((s) => s.uri).join(", ") : "(no skills installed)") +
     ".",
@@ -57,7 +99,10 @@ function result(text: string, structured: Record<string, unknown>) {
 }
 
 function buildServer(): McpServer {
-  const server = new McpServer({ name: "chart", version: "1.0.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer(
+    { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+    { instructions: INSTRUCTIONS }
+  );
 
   // --- skills, as resources plus a prompt each ---------------------------------
   for (const skill of SKILLS) {
@@ -106,6 +151,22 @@ function buildServer(): McpServer {
     );
   }
 
+  // --- the executive prompt library, one MCP prompt per recommended prompt -----
+  for (const prompt of PROMPT_LIBRARY) {
+    server.registerPrompt(
+      promptNameFor(prompt),
+      {
+        title: prompt.title,
+        description: `${prompt.role}, over ${prompt.dataset}: ${prompt.title}.`,
+        _meta: promptMetaFor(prompt),
+      },
+      async () => ({
+        description: prompt.title,
+        messages: [{ role: "user" as const, content: { type: "text" as const, text: prompt.text } }],
+      })
+    );
+  }
+
   // --- data --------------------------------------------------------------------
   server.registerTool(
     "load_data",
@@ -141,6 +202,78 @@ function buildServer(): McpServer {
       );
     }
   );
+
+  // Both tools are skipped when there are no packaged datasets: zod rejects an empty
+  // `z.enum([])`, and there would be nothing for either tool to do.
+  if (DATASET_NAMES.length > 0) {
+    server.registerTool(
+      "list_available_datasets",
+      {
+        title: "List Available Datasets",
+        description:
+          "Packaged datasets available to load — proprietary data this server ships, not yet loaded " +
+          "as a dataset. Each entry's referenceUri is a resource documenting its columns; a catalog " +
+          "`name` is not a datasetId. Call load_available_dataset to mint one.",
+        inputSchema: z.object({}),
+        outputSchema: z.object({
+          datasets: z.array(
+            z.object({ name: z.string(), description: z.string(), referenceUri: z.string() })
+          ),
+        }),
+        annotations: { readOnlyHint: true, idempotentHint: true },
+      },
+      async () => {
+        return result(
+          CATALOG.map((entry) => `${entry.name} — ${entry.description}`).join("\n"),
+          { datasets: CATALOG }
+        );
+      }
+    );
+
+    server.registerTool(
+      "load_available_dataset",
+      {
+        title: "Load Available Dataset",
+        description:
+          "Load a packaged dataset by its catalog name and return its id, columns, and a per-field " +
+          "summary — the same shape load_data returns. Loading the same name twice reuses the same " +
+          "datasetId rather than duplicating the table.",
+        inputSchema: z.object({
+          name: z.enum(DATASET_NAMES as [string, ...string[]]),
+        }),
+        outputSchema: z.object({
+          datasetId: z.string(),
+          columns: z.array(DatasetColumnSchema),
+          rowCount: z.number(),
+          summary: z.array(z.string()),
+        }),
+      },
+      async ({ name }) => {
+        const cached = loadedDatasetIds.get(name);
+        if (cached) {
+          const dataset = getDataset(cached);
+          const summary = await summarizeDataset(dataset.id);
+          return result(`${dataset.id} (already loaded, ${dataset.rowCount} rows).\n${summary.join("\n")}`, {
+            datasetId: dataset.id,
+            columns: dataset.columns,
+            rowCount: dataset.rowCount,
+            summary,
+          });
+        }
+
+        const rows = loadDatasetRows(name);
+        const dataset = await loadDataset(rows, name);
+        loadedDatasetIds.set(name, dataset.id);
+        const summary = await summarizeDataset(dataset.id);
+        return result(`Loaded ${dataset.rowCount} rows as ${dataset.id}.\n${summary.join("\n")}`, {
+          datasetId: dataset.id,
+          columns: dataset.columns,
+          rowCount: dataset.rowCount,
+          summary,
+        });
+      }
+    );
+  }
 
   server.registerTool(
     "inspect_dataset",
@@ -221,7 +354,7 @@ function buildServer(): McpServer {
           sourceDatasetId: datasetId,
           columns,
           rowCount: derived.rowCount,
-          previewRows: rows.slice(0, 10),
+          previewRows: rows.slice(0, QUERY_PREVIEW_ROWS),
           sql,
         }
       );
@@ -504,25 +637,33 @@ const handler = createMcpHandler(buildServer);
 const nodeHandler = toNodeHandler(handler);
 
 // The Hono and Express adapters arm these DNS-rebinding guards automatically;
-// on plain node:http they have to be wired in by hand.
-const validateHost = localhostHostValidation();
-const validateOrigin = localhostOriginValidation();
+// on plain node:http they have to be wired in by hand. The allow-lists are localhost
+// only unless MCP_ALLOWED_HOSTS / MCP_ALLOWED_ORIGINS name something else.
+const validateHost = hostHeaderValidation(ALLOWED_HOSTS);
+const validateOrigin = originValidation(ALLOWED_ORIGINS);
 
 const httpServer = createServer((req, res) => {
   if (!validateHost(req, res) || !validateOrigin(req, res)) return;
 
   const path = new URL(req.url ?? "/", `http://${HOST}:${PORT}`).pathname;
 
-  if (path === "/mcp") {
+  if (path === MCP_PATH) {
     // The adapter duck-types the request as `{ method?: string; url?: string }`,
     // which `exactOptionalPropertyTypes` rejects against Node's
     // `string | undefined`. Structurally compatible at runtime.
     void nodeHandler(req as Parameters<typeof nodeHandler>[0], res);
     return;
   }
-  if (path === "/health") {
+  if (path === HEALTH_PATH) {
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", skills: SKILLS.map((s) => s.name) }));
+    res.end(
+      JSON.stringify({
+        status: "ok",
+        skills: SKILLS.map((s) => s.name),
+        datasets: DATASET_NAMES,
+        prompts: PROMPT_LIBRARY.map((p) => promptNameFor(p)),
+      })
+    );
     return;
   }
   res.writeHead(404, { "content-type": "application/json" });

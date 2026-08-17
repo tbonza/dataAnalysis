@@ -6,16 +6,17 @@
 export {
   execSql,
   getDataset,
-  listDatasets,
+  listLoadedDatasets,
   loadDataset,
   registerResult,
   sampleRows,
   summarizeDataset,
   quoteIdent,
-  MAX_RESULT_ROWS,
   type Dataset,
   type DatasetColumn,
 } from "./duckdb.js";
+
+export { MAX_RESULT_ROWS, ALLOWED_FRONTMATTER_FIELDS, SKILL_URI_PREFIX } from "./constants.js";
 
 export {
   AGGREGATE_OPS,
@@ -42,14 +43,7 @@ export { applyConfigUI, sanitizeConfigUI } from "./configUI.js";
 export { applyRestyle, prepareRestyle, type RestyleResult } from "./restyle.js";
 export { createReport, ReportRequest, type ReportResult } from "./report.js";
 
-export {
-  ALLOWED_FRONTMATTER_FIELDS,
-  SKILL_URI_PREFIX,
-  loadSkills,
-  parseSkillFile,
-  skillsDirectory,
-  type Skill,
-} from "./skills.js";
+export { loadSkills, parseSkillFile, skillsDirectory, type Skill } from "./skills.js";
 
 export {
   ChartSpec,

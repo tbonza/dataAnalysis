@@ -1,0 +1,14 @@
+{
+  "name": "demo",
+  "version": "1.0.0",
+  "description": "Runs the MCP server, the agent server and the built chat client behind one port.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/demo.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "vite": "^8.2.1"
+  }
+}

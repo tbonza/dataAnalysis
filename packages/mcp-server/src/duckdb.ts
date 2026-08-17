@@ -180,7 +180,7 @@ export function getDataset(id: string): Dataset {
   );
 }
 
-export function listDatasets(): Dataset[] {
+export function listLoadedDatasets(): Dataset[] {
   return [...datasets.values()];
 }
 
@@ -213,7 +213,7 @@ export async function registerResult(
 
 export async function sampleRows(
   id: string,
-  limit = 10
+  limit = DEFAULT_SAMPLE_ROWS
 ): Promise<Array<Record<string, unknown>>> {
   const dataset = getDataset(id);
   const { rows } = await execSql(
@@ -228,7 +228,10 @@ export async function sampleRows(
  * ends, so an agent can sanity-read the values before charting rather than
  * trusting column names. flint's authoring skill asks for exactly this.
  */
-export async function summarizeDataset(id: string, sampleSize = 16): Promise<string[]> {
+export async function summarizeDataset(
+  id: string,
+  sampleSize = SUMMARY_SAMPLE_SIZE
+): Promise<string[]> {
   const dataset = getDataset(id);
   const table = quoteIdent(dataset.table);
   const half = Math.max(1, Math.floor(sampleSize / 2));

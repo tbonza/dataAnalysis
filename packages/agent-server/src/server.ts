@@ -1,10 +1,20 @@
 import { createServer, type ServerResponse } from "node:http";
+import { isBaseMessage, type AIMessage, type ToolMessage } from "@langchain/core/messages";
 import { buildAgent, type AgentBundle } from "./agent.js";
-
-const PORT = Number(process.env.AGENT_PORT ?? 3001);
-const HOST = "127.0.0.1";
-/** The web client runs on a different port, so it needs an explicit origin allowance. */
-const ALLOWED_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://127.0.0.1:5173";
+import {
+  AGENT_PORT,
+  CHAT_PATH,
+  CLIENT_ORIGIN,
+  DATASETS_PATH,
+  DEFAULT_THREAD_ID,
+  HEALTH_PATH,
+  HOST,
+  PROMPTS_PATH,
+  RECURSION_LIMIT,
+  TOOL_DETAIL_MAX_CHARS,
+} from "./constants.js";
+import { groupPrompts, resultOf } from "./library.js";
+import { frameForRole } from "./roles.js";
 
 type Event =
   | { type: "text"; text: string }
@@ -56,6 +66,13 @@ function chartEventsFrom(content: unknown): Event[] {
   return events;
 }
 
+/**
+ * `AIMessage.content`'s static type is a role-conditional generic
+ * (`$InferMessageContent`) that doesn't resolve cleanly off this codebase's
+ * unparameterized `AIMessage`/`ToolMessage` — real content at runtime is always
+ * `string | Array<ContentBlock>`, so this stays defensive rather than trusting the
+ * static type fully.
+ */
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -82,7 +99,7 @@ async function streamChat(
     { messages: [{ role: "user", content: message }], files: bundle.skillFiles },
     {
       streamMode: "updates",
-      recursionLimit: 50,
+      recursionLimit: RECURSION_LIMIT,
       // The thread is what makes a follow-up turn see the previous one's charts.
       configurable: { thread_id: threadId },
     }
@@ -94,22 +111,21 @@ async function streamChat(
       if (!Array.isArray(messages)) continue;
 
       for (const raw of messages) {
-        const entry = raw as {
-          getType?: () => string;
-          content?: unknown;
-          name?: string;
-          tool_calls?: Array<{ name?: string; args?: unknown }>;
-        };
-        const kind = entry.getType?.();
+        if (!isBaseMessage(raw)) continue;
+        const kind = raw.getType();
 
         if (kind === "ai") {
-          for (const call of entry.tool_calls ?? []) {
-            if (call.name) send(res, { type: "tool", name: call.name });
+          const ai = raw as AIMessage;
+          for (const call of ai.tool_calls ?? []) {
+            if (!call.name) continue;
+            const detail = detailOf(call.args);
+            send(res, detail ? { type: "tool", name: call.name, detail } : { type: "tool", name: call.name });
           }
-          const text = textOf(entry.content).trim();
+          const text = textOf(ai.content).trim();
           if (text) send(res, { type: "text", text });
         } else if (kind === "tool") {
-          for (const event of chartEventsFrom(entry.content)) {
+          const tool = raw as ToolMessage;
+          for (const event of chartEventsFrom(tool.content)) {
             if (event.type === "chart") {
               if (seenCharts.has(event.chartId)) continue;
               seenCharts.add(event.chartId);
@@ -122,11 +138,46 @@ async function streamChat(
   }
 }
 
+/** A tool call's arguments as one compact JSON line for the client's collapsed trail.
+ *  Capped so a `load_data` call carrying hundreds of rows doesn't flood the stream —
+ *  the trail is for seeing *what* the agent did, not for replaying it. */
+function detailOf(args: unknown): string | undefined {
+  if (args === undefined || args === null) return undefined;
+  const json = JSON.stringify(args);
+  if (!json || json === "{}") return undefined;
+  return json.length > TOOL_DETAIL_MAX_CHARS ? `${json.slice(0, TOOL_DETAIL_MAX_CHARS)}…` : json;
+}
+
+/** Write one bundle-derived JSON response, or a 503 if the MCP server is unreachable —
+ *  the pattern `/health` already used, generalized for `/datasets` and `/prompts`. */
+function respondWithBundle(
+  res: ServerResponse,
+  cors: Record<string, string>,
+  fn: (bundle: AgentBundle) => Promise<unknown>
+): void {
+  void bundlePromise.then(
+    async (bundle) => {
+      try {
+        const body = await fn(bundle);
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      } catch (err) {
+        res.writeHead(502, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "error", error: err instanceof Error ? err.message : String(err) }));
+      }
+    },
+    (err: unknown) => {
+      res.writeHead(503, { ...cors, "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "error", error: String(err) }));
+    }
+  );
+}
+
 const bundlePromise = buildAgent();
 
 const httpServer = createServer((req, res) => {
   const cors = {
-    "access-control-allow-origin": ALLOWED_ORIGIN,
+    "access-control-allow-origin": CLIENT_ORIGIN,
     "access-control-allow-headers": "content-type",
     "access-control-allow-methods": "POST, GET, OPTIONS",
   };
@@ -137,9 +188,9 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  const path = new URL(req.url ?? "/", `http://${HOST}:${PORT}`).pathname;
+  const path = new URL(req.url ?? "/", `http://${HOST}:${AGENT_PORT}`).pathname;
 
-  if (path === "/health") {
+  if (path === HEALTH_PATH) {
     void bundlePromise.then(
       (bundle) => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
@@ -153,7 +204,22 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  if (path === "/chat" && req.method === "POST") {
+  if (path === DATASETS_PATH && req.method === "GET") {
+    respondWithBundle(res, cors, async (bundle) => {
+      const raw = await bundle.mcpClient.callTool({ name: "list_available_datasets", arguments: {} });
+      return resultOf(raw);
+    });
+    return;
+  }
+
+  if (path === PROMPTS_PATH && req.method === "GET") {
+    respondWithBundle(res, cors, async (bundle) => ({
+      datasets: await groupPrompts(bundle.mcpClient),
+    }));
+    return;
+  }
+
+  if (path === CHAT_PATH && req.method === "POST") {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
@@ -168,11 +234,16 @@ const httpServer = createServer((req, res) => {
           const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
             message?: unknown;
             threadId?: unknown;
+            role?: unknown;
           };
           const message = typeof body.message === "string" ? body.message.trim() : "";
           if (!message) throw new Error("Request body needs a non-empty `message`.");
-          const threadId = typeof body.threadId === "string" && body.threadId ? body.threadId : "default";
-          await streamChat(await bundlePromise, message, threadId, res);
+          const threadId = typeof body.threadId === "string" && body.threadId ? body.threadId : DEFAULT_THREAD_ID;
+          const bundle = await bundlePromise;
+          // Sent on every turn rather than only when it changes, so the server stays
+          // stateless; an unusable `role` is dropped and the question goes through plain.
+          const framed = await frameForRole(bundle.mcpClient, message, body.role);
+          await streamChat(bundle, framed, threadId, res);
         } catch (err) {
           send(res, { type: "error", message: err instanceof Error ? err.message : String(err) });
         } finally {
@@ -188,8 +259,8 @@ const httpServer = createServer((req, res) => {
   res.end(JSON.stringify({ error: "Not found" }));
 });
 
-httpServer.listen(PORT, HOST, () => {
-  console.error(`Agent server on http://${HOST}:${PORT}/chat`);
+httpServer.listen(AGENT_PORT, HOST, () => {
+  console.error(`Agent server on http://${HOST}:${AGENT_PORT}${CHAT_PATH}`);
   void bundlePromise.then(
     (bundle) => {
       console.error(`Tools from MCP: ${bundle.toolNames.join(", ")}`);

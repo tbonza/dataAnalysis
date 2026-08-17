@@ -23,6 +23,26 @@ export const DEFAULT_MCP_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}/mcp`;
 export const MCP_PATH = "/mcp";
 export const HEALTH_PATH = "/health";
 
+/** Hostnames the DNS-rebinding guards accept, before anything is added to them. */
+const LOCALHOST_NAMES = ["localhost", "127.0.0.1", "[::1]"];
+
+function allowList(value: string | undefined): string[] {
+  const extra = (value ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  return [...LOCALHOST_NAMES, ...extra];
+}
+
+/**
+ * Who may reach `/mcp`. Localhost only by default — the guards exist because a browser
+ * on any page can otherwise be made to POST to a local server. Behind a reverse proxy
+ * the `Host` and `Origin` headers name the proxy instead, so those hostnames have to be
+ * named explicitly rather than the guards being dropped.
+ */
+export const ALLOWED_HOSTS = allowList(process.env["MCP_ALLOWED_HOSTS"]);
+export const ALLOWED_ORIGINS = allowList(process.env["MCP_ALLOWED_ORIGINS"]);
+
 // --- server identity ----------------------------------------------------------
 
 /** The name a client sees. agent-server's `SERVER_NAME` must match this. */

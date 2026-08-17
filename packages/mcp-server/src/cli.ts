@@ -1,4 +1,5 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { DEFAULT_MCP_URL } from "./constants.js";
 
 /**
  * Smoke test for the MCP server, driven without any model.
@@ -7,7 +8,10 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
  * needs to drive this server is in the tool schemas and the skill resources.
  */
 
-const URL_ = process.env.MCP_URL ?? "http://127.0.0.1:3000/mcp";
+// Deliberately not derived from the env-resolved `PORT`: this is a fixed default
+// so the CLI doesn't silently repoint itself in a shell that happens to have
+// `PORT` set for something else.
+const URL_ = process.env.MCP_URL ?? DEFAULT_MCP_URL;
 
 const ROWS = [
   { region: "East", product: "Widget", revenue: 120, units: 10 },

@@ -1,5 +1,6 @@
 import { getChart, putChart, warningsOf, type Chart } from "./chart.js";
 import { sanitizeConfigUI } from "./configUI.js";
+import { RESTYLE_SAMPLE_ROWS } from "./constants.js";
 import type { ConfigControl } from "./schemas.js";
 
 /**
@@ -23,7 +24,7 @@ export interface PreparedRestyle {
   dataSample: Array<Record<string, unknown>>;
 }
 
-export function prepareRestyle(chartId: string, sampleSize = 10): PreparedRestyle {
+export function prepareRestyle(chartId: string, sampleSize = RESTYLE_SAMPLE_ROWS): PreparedRestyle {
   const chart = getChart(chartId);
   const spec = stripPrivateKeys(structuredClone(chart.vlSpec));
   delete spec["data"];

@@ -8,6 +8,7 @@ import {
   vlRecommendCharts,
   vlRecommendEncodings,
 } from "flint-chart";
+import { CHART_ID_LENGTH, CHART_ID_PREFIX, FALLBACK_CHART_TYPE } from "./constants.js";
 import type { ChartSpec, ChartWarning, SemanticTypeMap } from "./schemas.js";
 
 /**
@@ -37,8 +38,6 @@ const CHART_TYPE_ALIASES: Record<string, string> = {
   worldmap: "World Map",
   usmap: "US Map",
 };
-
-const FALLBACK_CHART_TYPE = "Scatter Plot";
 
 /**
  * Resolve whatever an agent called the chart type into a real flint template,
@@ -92,7 +91,7 @@ export function putChart(chart: Chart): Chart {
 
 /** Upstream mints `chart-<uuid>` (analyst/agent.py:1109); charts are referenced by id in reports. */
 function mintChartId(): string {
-  return `chart-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  return `${CHART_ID_PREFIX}${randomUUID().replace(/-/g, "").slice(0, CHART_ID_LENGTH)}`;
 }
 
 export interface BuildChartArgs {

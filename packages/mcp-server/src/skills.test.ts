@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import {
+  ASSETS_DIRNAME,
+  DATASET_ASSET_EXTENSION,
+  REFERENCES_DIRNAME,
+} from "./constants.js";
+import { buildCatalog, datasetsSkill, isValidDatasetName } from "./datasets.js";
+import { buildPromptLibrary, jobRoles, promptNameFor } from "./prompts.js";
 import {
   ALLOWED_FRONTMATTER_FIELDS,
   loadSkills,
@@ -17,7 +24,16 @@ import {
  * exist.
  */
 
-const EXPECTED = ["chart-author", "chart-restyle", "data-analysis", "data-query", "report", "theme-author"];
+const EXPECTED = [
+  "chart-author",
+  "chart-restyle",
+  "data-analysis",
+  "data-query",
+  "datasets",
+  "job-roles",
+  "report",
+  "theme-author",
+];
 
 const skills = loadSkills();
 
@@ -121,6 +137,157 @@ describe("parseSkillFile", () => {
     const { frontmatter, body } = parseSkillFile("---\nname: x\ndescription: y\n---\n# Body\n");
     assert.deepEqual(frontmatter, { name: "x", description: "y" });
     assert.match(body, /# Body/);
+  });
+});
+
+describe("datasets and job-roles", () => {
+  const datasetsSkillObj = datasetsSkill(skills);
+  const rolesSkillObj = jobRoles(skills);
+  const WHEN_TO_USE = /\bUse (when|before|whenever)\b/i;
+
+  const assetsDir = join(skillsDirectory, "datasets", ASSETS_DIRNAME);
+  const referencesDir = join(skillsDirectory, "datasets", REFERENCES_DIRNAME);
+  const assetNames = existsSync(assetsDir)
+    ? readdirSync(assetsDir)
+        .filter((f) => f.endsWith(DATASET_ASSET_EXTENSION))
+        .map((f) => f.slice(0, -DATASET_ASSET_EXTENSION.length))
+    : [];
+  const referenceNames = existsSync(referencesDir)
+    ? readdirSync(referencesDir)
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => f.slice(0, -".md".length))
+    : [];
+
+  it("has at least one packaged dataset", () => {
+    assert.ok(datasetsSkillObj, "the datasets skill did not load");
+    assert.ok(assetNames.length > 0, "no dataset assets found under skills/datasets/assets/");
+  });
+
+  it("has at least one job role", () => {
+    assert.ok(rolesSkillObj, "the job-roles skill did not load");
+    assert.ok(
+      rolesSkillObj && rolesSkillObj.references.length > 0,
+      "no role references found under skills/job-roles/references/"
+    );
+  });
+
+  it("pairs every dataset asset with a reference doc, and vice versa", () => {
+    const assetSet = new Set(assetNames);
+    const referenceSet = new Set(referenceNames);
+    for (const name of assetNames) {
+      assert.ok(
+        referenceSet.has(name),
+        `dataset asset "${name}${DATASET_ASSET_EXTENSION}" has no matching references/${name}.md`
+      );
+    }
+    for (const name of referenceNames) {
+      assert.ok(
+        assetSet.has(name),
+        `dataset reference "${name}.md" has no matching assets/${name}${DATASET_ASSET_EXTENSION}`
+      );
+    }
+  });
+
+  it("every dataset name is a valid, spec-legal slug", () => {
+    for (const name of assetNames) {
+      assert.ok(isValidDatasetName(name), `dataset name "${name}" is not a valid slug`);
+    }
+  });
+
+  it("every dataset asset is non-empty, one JSON object per line, sharing one key set", () => {
+    for (const name of assetNames) {
+      const file = `${name}${DATASET_ASSET_EXTENSION}`;
+      const lines = readFileSync(join(assetsDir, file), "utf8")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+      assert.ok(lines.length > 0, `${file} has no rows`);
+
+      const rows = lines.map((line, i): Record<string, unknown> => {
+        try {
+          return JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return assert.fail(`${file} line ${i + 1} is not valid JSON`);
+        }
+      });
+      const keySets = new Set(rows.map((r) => JSON.stringify(Object.keys(r).sort())));
+      assert.equal(keySets.size, 1, `${file} rows do not all share the same keys`);
+    }
+  });
+
+  it("every dataset reference has a non-empty description that says when to use it", () => {
+    for (const reference of datasetsSkillObj?.references ?? []) {
+      const { frontmatter } = parseSkillFile(reference.text);
+      const description = frontmatter["description"];
+      assert.equal(typeof description, "string", `${reference.relativePath} needs a description`);
+      assert.match(
+        description as string,
+        WHEN_TO_USE,
+        `${reference.relativePath} description should say when to use it`
+      );
+    }
+  });
+
+  it("every job-role reference has a role, a when-to-use description, and at least one prompt", () => {
+    for (const reference of rolesSkillObj?.references ?? []) {
+      const { frontmatter } = parseSkillFile(reference.text);
+
+      const role = frontmatter["role"];
+      assert.equal(typeof role, "string", `${reference.relativePath} needs a "role"`);
+      assert.ok((role as string).length > 0, `${reference.relativePath} role is empty`);
+
+      const description = frontmatter["description"];
+      assert.equal(typeof description, "string", `${reference.relativePath} needs a description`);
+      assert.match(
+        description as string,
+        WHEN_TO_USE,
+        `${reference.relativePath} description should say when to use it`
+      );
+
+      const prompts = frontmatter["prompts"];
+      assert.ok(
+        Array.isArray(prompts) && prompts.length > 0,
+        `${reference.relativePath} needs at least one prompt`
+      );
+      for (const [i, prompt] of (prompts as Array<Record<string, unknown>>).entries()) {
+        assert.equal(
+          typeof prompt["title"],
+          "string",
+          `${reference.relativePath} prompts[${i}].title must be a string`
+        );
+        assert.ok(
+          (prompt["title"] as string).length > 0,
+          `${reference.relativePath} prompts[${i}].title is empty`
+        );
+        assert.equal(
+          typeof prompt["text"],
+          "string",
+          `${reference.relativePath} prompts[${i}].text must be a string`
+        );
+        assert.ok(
+          (prompt["text"] as string).trim().length > 0,
+          `${reference.relativePath} prompts[${i}].text is empty`
+        );
+      }
+    }
+  });
+
+  it("every recommended prompt names a dataset that actually exists", () => {
+    const datasetNames = new Set(buildCatalog(datasetsSkillObj).map((d) => d.name));
+    for (const prompt of buildPromptLibrary(rolesSkillObj)) {
+      assert.ok(
+        datasetNames.has(prompt.dataset),
+        `${prompt.role}'s prompt "${prompt.title}" names dataset "${prompt.dataset}", which does not exist`
+      );
+    }
+  });
+
+  it("every recommended prompt gets a unique, spec-legal MCP prompt name", () => {
+    const names = buildPromptLibrary(rolesSkillObj).map((p) => promptNameFor(p));
+    assert.equal(new Set(names).size, names.length, "promptNameFor produced a collision");
+    for (const name of names) {
+      assert.match(name, /^[a-zA-Z0-9_-]{1,128}$/, `"${name}" is not a spec-legal MCP prompt name`);
+    }
   });
 });
 
