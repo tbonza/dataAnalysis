@@ -5,9 +5,12 @@ consume it.
 
 The **MCP server is the product**. It has no model of its own: a consuming agent
 authors query and chart specs, and the server executes, validates and compiles them.
-Everything an agent needs to know is in the tool schemas and the six **Agent Skills**
+Everything an agent needs to know is in the tool schemas and the eight **Agent Skills**
 the server exposes as MCP resources — so any team's existing agent can use it without
-inheriting anything from the agent in this repo.
+inheriting anything from the agent in this repo. Two of those skills, `datasets` and
+`job-roles`, package proprietary-looking sample data and an executive prompt library
+so a user can pick a question instead of pasting rows into chat — see
+[Adding a dataset](#adding-a-dataset) below.
 
 Built on [flint-chart](https://github.com/microsoft/flint-chart) for chart compilation
 and [DuckDB-WASM](https://github.com/duckdb/duckdb-wasm) for data, with the analyst
@@ -50,7 +53,14 @@ pnpm --filter mcp-server cli
 That walks `load_data` → `query` → `create_chart` → `prepare_restyle` /
 `apply_restyle` → `create_report`, printing the generated SQL, the compiled Vega-Lite
 spec, and the repairable errors a consuming agent relies on. `curl -s
-http://127.0.0.1:3000/health` lists the loaded skills.
+http://127.0.0.1:3000/health` lists the loaded skills, the packaged datasets, and the
+executive prompt library's names.
+
+There is also a packaged-data path, so a caller never has to type rows in:
+`list_available_datasets` returns the catalog (today, one dataset — `regional-sales`),
+and `load_available_dataset({ name })` mints a `datasetId` exactly like `load_data`
+does. From there `inspect_dataset` → `query` → `create_chart` work identically
+regardless of where the data came from.
 
 ## Run the whole demo
 
@@ -62,9 +72,14 @@ pnpm agent    # 2. the deep agent        → :3001   (needs AWS credentials)
 pnpm web      # 3. the chat client       → :5173
 ```
 
-Open <http://127.0.0.1:5173> and ask for a chart. The prefilled example describes a
-small sales table and asks for revenue by region; a follow-up like *"make the bars
-green"* exercises the restyle path.
+Open <http://127.0.0.1:5173>. The composer starts empty; the entry point is the
+**picker** above it, showing every packaged dataset's recommended prompts grouped by
+executive role. Click one and its text fills the composer, editable — nothing sends
+until you press Enter or Send. Pick a prompt (or type your own question) to get a
+chart with no data pasted into chat; a follow-up like *"make the bars green"*
+exercises the restyle path. The picker is served by `GET :3001/prompts`, which groups
+the MCP server's prompt library by dataset then role; `GET :3001/datasets` proxies the
+catalog the same way.
 
 If the agent server reports an expired token, refresh your credentials (e.g. `aws sso
 login`) **and restart the agent server** — it resolves credentials once at startup, so a
@@ -97,7 +112,11 @@ claude mcp add --transport http chart http://127.0.0.1:3000/mcp
 ```
 
 Then tell your agent to read `chart://skill/data-analysis` and go. It needs nothing
-from `packages/agent-server` — if it did, the skills would be incomplete.
+from `packages/agent-server` — if it did, the skills would be incomplete. The
+executive prompt library travels the same way: every recommended prompt is a real MCP
+prompt, so it shows up in Claude Code's own prompt picker — the clearest
+demonstration that the library is part of the product, not the `packages/web-client`
+UI.
 
 DNS-rebinding guards are armed, so requests must come from a localhost origin.
 
@@ -115,22 +134,67 @@ subdirectories, exposed as their own resources, so an agent loads it only when n
 | `chart-restyle` | Appearance-only edits, and the follow-up control contract |
 | `theme-author` | Presets and brand overrides for a consistent look |
 | `report` | Assembling prose and existing charts into one document |
+| `datasets` | The packaged-dataset catalog: how to list, read, and load one |
+| `job-roles` | Executive personas an answer can be framed for, and their recommended prompts |
 
 They follow the [Agent Skills specification](https://agentskills.io/specification), and
 a test enforces it: name matching its directory, no frontmatter fields outside the
 permitted set, bodies under 500 lines, and every relative link resolving.
 
+## Adding a dataset
+
+A packaged dataset is two files under `packages/mcp-server/skills/datasets/` —
+`SKILL.md` is never touched:
+
+- `assets/<name>.jsonl` — the rows, one JSON object per line. Never loaded into an
+  agent's context; only `load_available_dataset` reads it.
+- `references/<name>.md` — `description:` frontmatter (what the dataset covers and
+  when to reach for it) plus a column-by-column doc in the same style
+  `inspect_dataset` uses. This file *is* loaded into context, as an MCP resource —
+  which is exactly why rows never belong in it.
+
+Fast path:
+
+```bash
+pnpm create-dataset <name> --from ./rows.json   # a JSON array of row objects, or a .jsonl
+```
+
+It refuses to overwrite an existing dataset or write an invalid name, and its
+generated `references/<name>.md` is spec-compliant on write — `pnpm test` enforces
+the 1:1 pairing between `assets/` and `references/`, so a mismatched or malformed
+dataset fails the suite immediately rather than at demo time. An asset is read whole
+into memory when loaded, so keep them demo-sized.
+
+Dataset assets are **committed and published** — `packages/mcp-server/package.json`'s
+`files` list includes `skills/`, and nothing in `.gitignore` excludes the `assets/`
+subdirectory. Fine for the synthetic sample shipped here; worth knowing if you're
+adding anything genuinely proprietary.
+
+## Adding a job role or a recommended prompt
+
+Roles live under `packages/mcp-server/skills/job-roles/references/`, one file per
+role. Frontmatter carries `role` (display name), `description` (when to use it), and
+`prompts` — a list of `{ dataset, title, text }`, each naming a dataset that actually
+exists. The Markdown body is the persona: what that executive optimizes for and how
+they want an answer framed — content the agent reads when the user is speaking as
+that role, distinct from the prompt list, which is what the picker renders.
+
+`pnpm test` checks the whole library: every prompt's dataset resolves to a real one,
+every reference has the required frontmatter, and every prompt mints a unique MCP
+prompt name.
+
 ## Tests and checks
 
 ```bash
-pnpm test        # 93 tests; needs no credentials
+pnpm test        # 120 tests; needs no credentials
 pnpm typecheck   # all three packages
 ```
 
 The suite covers query compilation and validation, the DuckDB round trip, chart-type
 resolution and flint assembly, the `configUI` sanitizer's prototype-pollution guards,
-and skill compliance. One test is a security regression: it asserts that
-`read_csv_auto('/etc/hosts')` is refused.
+skill compliance, and the dataset/job-role library's own integrity (asset↔reference
+pairing, prompt-name uniqueness, every prompt's dataset actually existing). One test
+is a security regression: it asserts that `read_csv_auto('/etc/hosts')` is refused.
 
 ## Configuration
 
@@ -173,6 +237,9 @@ SVG, or a slide.
   therefore unsupported, and the `data-query` skill says so rather than letting an agent
   discover it.
 - **No joins.** One dataset per query; chaining covers multi-step aggregation.
-- **No file or URL ingestion.** Inline rows only, which keeps the filesystem out of the
-  picture.
+- **No caller-supplied file or URL ingestion.** `load_data` takes inline rows only. The
+  packaged-dataset tools do read from disk, but never from a caller-supplied path —
+  `load_available_dataset`'s `name` is a closed enum built from the assets that ship
+  with the server, so the files a request can reach are fixed at startup, not chosen
+  by the request.
 - **Nothing persists.** Datasets and charts live in memory and die with the process.

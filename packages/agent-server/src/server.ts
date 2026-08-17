@@ -1,5 +1,6 @@
 import { createServer, type ServerResponse } from "node:http";
-import { buildAgent, type AgentBundle } from "./agent.js";
+import { isBaseMessage, type AIMessage, type ToolMessage } from "@langchain/core/messages";
+import { buildAgent, type AgentBundle, type McpToolClient } from "./agent.js";
 import {
   AGENT_PORT,
   CHAT_PATH,
@@ -63,6 +64,13 @@ function chartEventsFrom(content: unknown): Event[] {
   return events;
 }
 
+/**
+ * `AIMessage.content`'s static type is a role-conditional generic
+ * (`$InferMessageContent`) that doesn't resolve cleanly off this codebase's
+ * unparameterized `AIMessage`/`ToolMessage` — real content at runtime is always
+ * `string | Array<ContentBlock>`, so this stays defensive rather than trusting the
+ * static type fully.
+ */
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -101,22 +109,19 @@ async function streamChat(
       if (!Array.isArray(messages)) continue;
 
       for (const raw of messages) {
-        const entry = raw as {
-          getType?: () => string;
-          content?: unknown;
-          name?: string;
-          tool_calls?: Array<{ name?: string; args?: unknown }>;
-        };
-        const kind = entry.getType?.();
+        if (!isBaseMessage(raw)) continue;
+        const kind = raw.getType();
 
         if (kind === "ai") {
-          for (const call of entry.tool_calls ?? []) {
+          const ai = raw as AIMessage;
+          for (const call of ai.tool_calls ?? []) {
             if (call.name) send(res, { type: "tool", name: call.name });
           }
-          const text = textOf(entry.content).trim();
+          const text = textOf(ai.content).trim();
           if (text) send(res, { type: "text", text });
         } else if (kind === "tool") {
-          for (const event of chartEventsFrom(entry.content)) {
+          const tool = raw as ToolMessage;
+          for (const event of chartEventsFrom(tool.content)) {
             if (event.type === "chart") {
               if (seenCharts.has(event.chartId)) continue;
               seenCharts.add(event.chartId);
@@ -141,24 +146,36 @@ interface GroupedPrompts {
   roles: Array<{
     role: string;
     roleSlug: string;
-    prompts: Array<{ name: string; title: string }>;
+    prompts: Array<{ name: string; title: string; text: string }>;
   }>;
 }
 
-/** `listPrompts()`'s recommended-prompt entries, grouped dataset -> role -> prompt —
- *  the shape the web picker renders directly. */
-function groupPrompts(
-  prompts: Array<{ name: string; title?: string; description?: string; _meta?: Record<string, unknown> }>
-): GroupedPrompts[] {
+/** The first text block of a `getPrompt` result — the same text `promptNameFor`'s
+ *  registration on the MCP server hands to a model, so the picker inserts exactly
+ *  what running the prompt in Claude Code would. */
+function firstTextOf(result: { messages: Array<{ content: { type: string; text?: string } }> }): string {
+  const block = result.messages.find((m) => m.content.type === "text");
+  return block?.content.text ?? "";
+}
+
+/** `listPrompts()`'s recommended-prompt entries, with each one's real text fetched via
+ *  `getPrompt`, grouped dataset -> role -> prompt — the shape the web picker renders. */
+async function groupPrompts(client: McpToolClient): Promise<GroupedPrompts[]> {
+  const { prompts } = await client.listPrompts();
+  const recommended = prompts.filter((p) => p._meta && p._meta["kind"] === RECOMMENDED_PROMPT_KIND);
+
   const byDataset = new Map<string, Map<string, GroupedPrompts["roles"][number]>>();
 
-  for (const prompt of prompts) {
-    const meta = prompt._meta;
-    if (!meta || meta["kind"] !== RECOMMENDED_PROMPT_KIND) continue;
+  // Sequential rather than Promise.all: keeps each role's prompts in the library's
+  // authored order instead of whichever `getPrompt` call happens to resolve first.
+  for (const prompt of recommended) {
+    const meta = prompt._meta ?? {};
     const dataset = meta["dataset"];
     const role = meta["role"];
     const roleSlug = meta["roleSlug"];
     if (typeof dataset !== "string" || typeof role !== "string" || typeof roleSlug !== "string") continue;
+
+    const text = firstTextOf(await client.getPrompt({ name: prompt.name }));
 
     let roles = byDataset.get(dataset);
     if (!roles) {
@@ -170,7 +187,7 @@ function groupPrompts(
       entry = { role, roleSlug, prompts: [] };
       roles.set(roleSlug, entry);
     }
-    entry.prompts.push({ name: prompt.name, title: prompt.title ?? prompt.name });
+    entry.prompts.push({ name: prompt.name, title: prompt.title ?? prompt.name, text });
   }
 
   return [...byDataset.entries()].map(([dataset, roles]) => ({
@@ -244,10 +261,9 @@ const httpServer = createServer((req, res) => {
   }
 
   if (path === PROMPTS_PATH && req.method === "GET") {
-    respondWithBundle(res, cors, async (bundle) => {
-      const { prompts } = await bundle.mcpClient.listPrompts();
-      return { datasets: groupPrompts(prompts) };
-    });
+    respondWithBundle(res, cors, async (bundle) => ({
+      datasets: await groupPrompts(bundle.mcpClient),
+    }));
     return;
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Chart } from "./Chart.js";
-import { AGENT_URL, CHAT_PATH } from "./constants.js";
+import { AGENT_URL, CHAT_PATH, COMPOSER_PLACEHOLDER, EMPTY_LOG_HINT } from "./constants.js";
+import { PromptPicker } from "./PromptPicker.js";
 
 /** The event shapes the agent server streams over SSE. */
 type AgentEvent =
@@ -22,19 +23,22 @@ interface Turn {
   >;
 }
 
-const EXAMPLE =
-  "Here is sales data: East/Widget 120 revenue 10 units, East/Gadget 80 revenue 5 units, " +
-  "West/Widget 200 revenue 25 units, West/Gadget 50 revenue 2 units, North/Widget 90 revenue 9 units. " +
-  "Chart total revenue by region.";
-
 export function App(): React.ReactElement {
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [draft, setDraft] = useState(EXAMPLE);
+  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
   // One thread for the page's lifetime, so a follow-up like "make the bars green" can
   // see the chart the previous turn made.
   const threadId = useRef(crypto.randomUUID());
+
+  // The picker never sends — it only fills the composer, editable, and hands focus
+  // back so the user can send as-is or adjust it first.
+  const pickPrompt = useCallback((text: string) => {
+    setDraft(text);
+    textarea.current?.focus();
+  }, []);
 
   const appendPart = useCallback((part: Turn["parts"][number]) => {
     setTurns((current) => {
@@ -108,7 +112,12 @@ export function App(): React.ReactElement {
       </header>
 
       <div className="log" ref={scroller}>
-        {turns.length === 0 && <p className="hint">Describe some data and ask for a chart.</p>}
+        {turns.length === 0 && (
+          <>
+            <p className="hint">{EMPTY_LOG_HINT}</p>
+            <PromptPicker onPick={pickPrompt} busy={busy} />
+          </>
+        )}
         {turns.map((turn, turnIndex) => (
           <article key={turnIndex} className={turn.role}>
             {turn.parts.map((part, partIndex) => {
@@ -140,9 +149,10 @@ export function App(): React.ReactElement {
         }}
       >
         <textarea
+          ref={textarea}
           value={draft}
           rows={3}
-          placeholder="Describe your data and what you want to see…"
+          placeholder={COMPOSER_PLACEHOLDER}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {

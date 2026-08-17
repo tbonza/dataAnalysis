@@ -26,7 +26,7 @@ const SYSTEM_PROMPT = [
 ].join("\n");
 
 /**
- * The two calls the `/datasets` and `/prompts` routes need, narrowed the same way
+ * The three calls the `/datasets` and `/prompts` routes need, narrowed the same way
  * `skills.ts`'s `ResourceReader` is — so callers of `AgentBundle` take no type
  * dependency on the MCP SDK beyond what they actually use.
  */
@@ -37,6 +37,11 @@ export interface McpToolClient {
   }) => Promise<{ structuredContent?: unknown; content?: unknown[] }>;
   listPrompts: () => Promise<{
     prompts: Array<{ name: string; title?: string; description?: string; _meta?: Record<string, unknown> }>;
+  }>;
+  /** `prompts/list` carries no message text — the picker needs the real prompt content,
+   *  which only `getPrompt` returns, so it renders exactly what Claude Code would. */
+  getPrompt: (params: { name: string }) => Promise<{
+    messages: Array<{ role: string; content: { type: string; text?: string } }>;
   }>;
 }
 

@@ -99,6 +99,58 @@ p.error {
   overflow-x: auto;
 }
 
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.picker h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 0.6rem;
+}
+
+.picker-role {
+  margin-bottom: 0.75rem;
+}
+
+.picker-role h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+
+.picker-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.picker-prompts button {
+  align-self: auto;
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+}
+
+.picker-prompts button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.picker-prompts button:disabled {
+  background: #fff;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .composer {
   display: flex;
   gap: 0.6rem;

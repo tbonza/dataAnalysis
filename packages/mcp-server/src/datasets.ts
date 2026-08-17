@@ -29,8 +29,16 @@ function assetsDir(): string {
   return join(skillsDirectory, DATASETS_SKILL_NAME, ASSETS_DIRNAME);
 }
 
+function referencesDir(): string {
+  return join(skillsDirectory, DATASETS_SKILL_NAME, REFERENCES_DIRNAME);
+}
+
 export function assetPathFor(name: string): string {
   return join(assetsDir(), `${name}${DATASET_ASSET_EXTENSION}`);
+}
+
+export function referencePathFor(name: string): string {
+  return join(referencesDir(), `${name}.md`);
 }
 
 /** Read and parse one dataset's rows. The only function in this module that opens an asset. */
