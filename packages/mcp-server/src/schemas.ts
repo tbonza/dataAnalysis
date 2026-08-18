@@ -130,6 +130,36 @@ export const ConfigControl = z.discriminatedUnion("type", [
 
 export type ConfigControl = z.infer<typeof ConfigControl>;
 
+/**
+ * The same controls as a tool *input*, with every type-specific field optional.
+ *
+ * `ConfigControl` above is the contract a control must meet to be usable, and it is what
+ * the server returns. It is the wrong thing to validate an argument against, because
+ * `configUI` is decoration on top of a restyle, not the restyle: rejecting the whole call
+ * because one control of four omitted `options` throws away the work the caller actually
+ * asked for. `sanitizeConfigUI` already drops a control that cannot be honoured and
+ * `applyRestyle` already reports how many it dropped, so the lenient shape here costs a
+ * warning where the strict one cost the turn.
+ *
+ * Still described field by field, so the published JSON Schema tells a model what a
+ * well-formed control looks like — this loosens what is *enforced*, not what is *asked
+ * for*.
+ */
+export const ConfigControlInput = z.object({
+  key: z.string(),
+  label: z.string(),
+  path: ControlPath,
+  type: z.enum(["continuous", "binary", "discrete"]),
+  min: z.number().optional().describe("continuous only, required for it"),
+  max: z.number().optional().describe("continuous only, required for it"),
+  step: z.number().optional().describe("continuous only"),
+  options: z
+    .array(z.object({ value: z.unknown(), label: z.string() }))
+    .optional()
+    .describe("discrete only, required for it and must be non-empty"),
+  defaultValue: z.unknown().optional(),
+});
+
 export const ValidationResult = z.object({
   valid: z.boolean(),
   errors: z.array(z.string()),

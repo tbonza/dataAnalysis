@@ -4,8 +4,8 @@
  * The three services normally run on three ports and the browser talks cross-origin to
  * the agent on :3001. That falls apart behind a network proxy, where only one address
  * is reachable. This script keeps the MCP and agent servers on loopback, builds the web
- * client so its API calls are same-origin and relative, and puts Vite's preview server
- * in front of all three as the single exposed port.
+ * client so its API calls are same-origin and relative, and puts our own server
+ * (`server.ts`) in front of all three as the single exposed port.
  *
  * Nothing about the three-shell development workflow changes: `pnpm mcp`, `pnpm agent`
  * and `pnpm web` still do exactly what they did.
@@ -15,7 +15,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, preview } from "vite";
+import { build } from "vite";
 
 import {
   AGENT_CLIENT_BASE,
@@ -27,6 +27,7 @@ import {
   DEMO_ALLOWED_HOSTS,
   DEMO_HOST,
   DEMO_PORT,
+  DIST_DIR,
   FLAG_ERRORS,
   MCP_HEALTH_URL,
   MCP_PORT,
@@ -39,6 +40,7 @@ import {
   USAGE,
   WEB_CLIENT_DIR,
 } from "./constants.js";
+import { startDemoServer } from "./server.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../..");
@@ -171,9 +173,8 @@ async function main(): Promise<void> {
     // `./assets/…` rather than `/assets/…`, so a proxy serving the demo under a path
     // prefix (`/proxy/8080/`) doesn't send the browser to the origin root for the JS
     // and CSS. Set here rather than in web-client/vite.config.ts so `pnpm web` — where
-    // there is no prefix and no build — is untouched, and so `preview()` below keeps
-    // the default base and goes on serving `dist/` at `/`, which is exactly what the
-    // proxy requests once it has stripped its prefix.
+    // there is no prefix and no build — is untouched. The demo server serves `dist/` at
+    // `/`, which is what the proxy requests once it has stripped its own prefix.
     await build({ root: WEB_CLIENT_ROOT, base: "./", logLevel: "warn" });
   }
 
@@ -196,31 +197,31 @@ async function main(): Promise<void> {
   await waitForHealth("The agent server", AGENT_HEALTH_URL, AGENT_READY_TIMEOUT_MS);
   if (shuttingDown) return;
 
-  const server = await preview({
-    root: WEB_CLIENT_ROOT,
-    logLevel: "warn",
-    preview: {
-      host: DEMO_HOST,
-      port: DEMO_PORT,
-      // A silent port change would hand the user a URL that isn't the one they proxied.
-      strictPort: true,
-      allowedHosts: DEMO_ALLOWED_HOSTS,
-      proxy: {
-        // Stripped again on the way through, so agent-server keeps serving `/chat`,
-        // `/prompts` and `/datasets` at the paths its own constants declare.
-        [AGENT_PREFIX]: {
-          target: `http://${CHILD_HOST}:${AGENT_PORT}`,
-          changeOrigin: true,
-          rewrite: (path: string) => path.replace(new RegExp(`^${AGENT_PREFIX}`), ""),
-        },
-        // `changeOrigin` rewrites the Host header to the loopback target, which is what
-        // satisfies the MCP server's DNS-rebinding guard without weakening it.
-        [MCP_PREFIX]: {
-          target: `http://${CHILD_HOST}:${MCP_PORT}`,
-          changeOrigin: true,
-        },
+  await startDemoServer({
+    host: DEMO_HOST,
+    port: DEMO_PORT,
+    allowedHosts: DEMO_ALLOWED_HOSTS,
+    distDir: resolve(WEB_CLIENT_ROOT, DIST_DIR),
+    routes: [
+      // Stripped on the way through, so agent-server keeps serving `/chat`, `/prompts`
+      // and `/datasets` at the paths its own constants declare.
+      {
+        prefix: AGENT_PREFIX,
+        strip: true,
+        host: CHILD_HOST,
+        port: AGENT_PORT,
+        hostHeader: `${CHILD_HOST}:${AGENT_PORT}`,
       },
-    },
+      // Path intact — the MCP server owns `/mcp` on both sides. The rewritten `Host` is
+      // what satisfies its DNS-rebinding guard without weakening it.
+      {
+        prefix: MCP_PREFIX,
+        strip: false,
+        host: CHILD_HOST,
+        port: MCP_PORT,
+        hostHeader: `${CHILD_HOST}:${MCP_PORT}`,
+      },
+    ],
   });
 
   const shown = DEMO_HOST === "0.0.0.0" || DEMO_HOST === "::" ? (DEMO_ALLOWED_HOSTS[0] ?? "localhost") : DEMO_HOST;
@@ -231,11 +232,10 @@ async function main(): Promise<void> {
   console.error(`    agent API     ${base}${AGENT_PREFIX}/health`);
   console.error(`    MCP endpoint  ${base}${MCP_PREFIX}`);
   console.error("");
-  server.printUrls();
 }
 
-// Registered before `preview()`, which installs a SIGTERM handler of its own that exits
-// the process — ours has to run first if the children are to be cleaned up.
+// The demo server installs no signal handlers of its own, so these are the only ones:
+// a signal has to reach the children, or `pnpm demo` leaves listeners on :3000 and :3001.
 process.on("SIGINT", () => void shutdown(0));
 process.on("SIGTERM", () => void shutdown(0));
 // Last resort: `kill` is safe to call synchronously, so an exit by any other route

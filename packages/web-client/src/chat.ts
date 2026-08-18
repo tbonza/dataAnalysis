@@ -3,7 +3,9 @@ import { AGENT_URL, CHAT_PATH, SSE_DATA_PREFIX, SSE_FRAME_SEPARATOR } from "./co
 /** The event shapes the agent server streams over SSE. Mirrors `Event` in
  *  `agent-server/src/server.ts` — the two are coupled by deployment, not by code. */
 export type AgentEvent =
-  | { type: "text"; text: string }
+  /** `delta` marks one token chunk of a message still being generated, which the log
+   *  appends to the text part in progress. Without it, a `text` event is a whole block. */
+  | { type: "text"; text: string; delta?: true }
   | { type: "tool"; name: string; detail?: string }
   | { type: "chart"; chartId: string; chartType?: string; vlSpec: Record<string, unknown> }
   | { type: "report"; markdown: string }

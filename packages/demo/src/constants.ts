@@ -104,13 +104,13 @@ export const FLAG_ERRORS: readonly string[] = FLAGS.errors;
 
 // --- the one exposed address --------------------------------------------------
 
-/** What the preview server binds. `0.0.0.0` to reach the demo from another host.
+/** What the demo server binds. `0.0.0.0` to reach the demo from another host.
  *  `--host`, else `DEMO_HOST`. */
 export const DEMO_HOST = FLAGS.host ?? process.env["DEMO_HOST"] ?? "127.0.0.1";
 export const DEMO_PORT = FLAGS.port ?? Number(process.env["DEMO_PORT"] ?? 8080);
 
 /**
- * Hostnames allowed to reach the demo. Vite's preview server rejects a `Host` header it
+ * Hostnames allowed to reach the demo. The demo server rejects a `Host` header it
  * doesn't recognise, so reaching the demo by anything other than localhost requires
  * naming that host here. Also widens the MCP server's own DNS-rebinding guards, so
  * `/mcp` stays usable through the same address.
@@ -123,7 +123,7 @@ export const DEMO_ALLOWED_HOSTS =
 // --- the loopback services behind it -------------------------------------------
 
 /** Both child servers hardcode `127.0.0.1`, so these ports are never externally
- *  reachable — only the preview port above is. */
+ *  reachable — only the demo port above is. */
 export const CHILD_HOST = "127.0.0.1";
 export const MCP_PORT = Number(process.env["DEMO_MCP_PORT"] ?? 3000);
 export const AGENT_PORT = Number(process.env["DEMO_AGENT_PORT"] ?? 3001);
@@ -135,9 +135,9 @@ export const AGENT_HEALTH_URL = `http://${CHILD_HOST}:${AGENT_PORT}/health`;
 // --- routing --------------------------------------------------------------------
 
 /**
- * The prefix the browser reaches the agent under, as the preview server's proxy table
- * keys it — root-absolute, because that is the path the proxy hands Vite once it has
- * stripped its own prefix. The proxy strips this one again before forwarding, so
+ * The prefix the browser reaches the agent under, as the demo server's route table
+ * keys it — root-absolute, because that is the path an outer proxy hands us once it
+ * has stripped its own prefix. The proxy strips this one again before forwarding, so
  * agent-server's route constants stay as they are.
  */
 export const AGENT_PREFIX = "/api";
@@ -173,3 +173,69 @@ export const SKIP_BUILD = Boolean(process.env["DEMO_SKIP_BUILD"]);
 
 /** Where the web client's package lives, relative to this package's directory. */
 export const WEB_CLIENT_DIR = "../web-client";
+
+/** The build output we serve, inside the web client's package. */
+export const DIST_DIR = "dist";
+
+export const INDEX_HTML = "index.html";
+
+/** Everything under here is content-hashed by the build, so it can be cached forever —
+ *  and a miss under it is a real 404 rather than a fallback to `index.html`. */
+export const ASSETS_PREFIX = "/assets/";
+
+// --- serving --------------------------------------------------------------------
+
+/** Hostnames the demo always answers to, before `--allowed-host` adds any. Mirrors
+ *  mcp-server's `LOCALHOST_NAMES`: naming a proxy widens this list, never replaces it. */
+export const LOCALHOST_NAMES = ["localhost", "127.0.0.1", "[::1]"];
+
+/**
+ * Extension to content type. Deliberately a short explicit table rather than a mime
+ * database: `dist/` holds html, js and css, and the rest are here so a favicon or a font
+ * added later doesn't arrive as a download.
+ */
+export const CONTENT_TYPES: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".gif": "image/gif",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+/** What an unknown extension is served as. Not `text/plain`: a browser must not try to
+ *  interpret something we could not identify. */
+export const FALLBACK_CONTENT_TYPE = "application/octet-stream";
+
+/** Hashed asset names change when their content does, so they never need revalidating. */
+export const ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
+/** Everything else — `index.html` above all — must be revalidated, which the ETag then
+ *  answers with a 304. */
+export const DEFAULT_CACHE_CONTROL = "no-cache";
+
+/**
+ * Headers that must not be copied from one hop to the next (RFC 9110 §7.6.1). Node
+ * frames the response itself, so passing `transfer-encoding` through would have us
+ * declaring a framing we are not performing.
+ */
+export const HOP_BY_HOP_HEADERS = [
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+];

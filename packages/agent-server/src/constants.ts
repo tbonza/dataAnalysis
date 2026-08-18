@@ -59,11 +59,53 @@ export const RECOMMENDED_PROMPT_KIND = "recommended-prompt";
 /** Ceiling on the deepagents graph's step count for a single turn. */
 export const RECURSION_LIMIT = 50;
 
+/**
+ * The graph node that calls the model — langchain's own `AGENT_NODE_NAME`
+ * (`langchain/dist/agents/nodes/AgentNode.js`). Token deltas are filtered to it so a
+ * middleware model call can't leak into the answer.
+ *
+ * Deliberately not load-bearing: if langchain renames the node, the filter matches
+ * nothing and `streamChat` falls back to emitting each message's text whole, exactly as
+ * it did before token streaming. A rename costs the typewriter effect, not the answer.
+ */
+export const MODEL_NODE_NAME = "model_request";
+
 /** Longest `detail` string a `tool` SSE event carries (a tool call's JSON arguments,
  *  truncated) — enough to read what a call did, small enough for `load_data` rows. */
 export const TOOL_DETAIL_MAX_CHARS = 400;
 
 export const DEFAULT_THREAD_ID = "default";
+
+// --- SSE, through a buffering proxy ---------------------------------------
+
+/**
+ * Bytes of SSE comment written before the first real event.
+ *
+ * A reverse proxy that buffers to a fixed threshold holds a stream until it has that
+ * many bytes, which turns a live turn into one delivery at the end. Crossing the
+ * threshold up front makes the proxy start flushing. The client ignores comment frames
+ * (they carry no `data:` line), so this costs one wasted packet and nothing else.
+ */
+export const SSE_PADDING_BYTES = 2048;
+
+/** How often to write a keep-alive comment while a turn is in flight. Stops an idle
+ *  timeout from cutting a long tool call, and keeps bytes moving through a proxy that
+ *  only flushes on write. */
+export const SSE_HEARTBEAT_MS = 15_000;
+
+/**
+ * Headers that keep a stream a stream across intermediaries.
+ *
+ * `no-transform` forbids a proxy from gzipping the response — compression buffers by
+ * nature. `x-accel-buffering` is the nginx family's opt-out from response buffering;
+ * other proxies ignore it, which is why the padding and heartbeat above exist too.
+ */
+export const SSE_HEADERS = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache, no-transform",
+  connection: "keep-alive",
+  "x-accel-buffering": "no",
+} as const;
 
 /** Longest role name `/chat` will accept. The library's own names ("Chief Executive
  *  Officer") are well under this; the cap exists so a client can't push an essay into

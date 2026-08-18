@@ -12,7 +12,7 @@ export interface Step {
 }
 
 export type Part =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; delta?: true }
   | { kind: "tool"; step: Step }
   | { kind: "chart"; chartId: string; spec: Record<string, unknown> }
   | { kind: "error"; message: string };
@@ -33,7 +33,7 @@ export type Rendered = Exclude<Part, { kind: "tool" }> | { kind: "trail"; steps:
 export function partFor(event: AgentEvent): Part | undefined {
   switch (event.type) {
     case "text":
-      return { kind: "text", text: event.text };
+      return event.delta ? { kind: "text", text: event.text, delta: true } : { kind: "text", text: event.text };
     case "report":
       return { kind: "text", text: event.markdown };
     case "tool":
@@ -51,23 +51,41 @@ export function partFor(event: AgentEvent): Part | undefined {
 }
 
 /** Append to the assistant's turn in progress, starting one if the last turn is the
- *  user's. Pure — returns a new array, mutating nothing. */
+ *  user's. Pure — returns a new array, mutating nothing.
+ *
+ *  A token delta merges into the text part it is continuing, so a streamed answer is one
+ *  paragraph rather than one per token. Only deltas merge: two whole `text` blocks, or a
+ *  report following an answer, stay separate. */
 export function withPart(turns: Turn[], part: Part): Turn[] {
   const last = turns[turns.length - 1];
   if (!last || last.role !== "assistant") return [...turns, { role: "assistant", parts: [part] }];
+
+  const open = last.parts[last.parts.length - 1];
+  if (part.kind === "text" && part.delta && open?.kind === "text" && open.delta) {
+    const merged: Part = { kind: "text", text: open.text + part.text, delta: true };
+    return [...turns.slice(0, -1), { ...last, parts: [...last.parts.slice(0, -1), merged] }];
+  }
   return [...turns.slice(0, -1), { ...last, parts: [...last.parts, part] }];
 }
 
 export function groupParts(parts: Part[]): Rendered[] {
   const out: Rendered[] = [];
+  // Every tool call in the turn joins the same trail, wherever it lands, and the trail
+  // renders where the first one did. Folding only *consecutive* calls used to give the
+  // same result, but only because prose always arrived last; now that the model streams
+  // its tokens as it writes them, a sentence can land between two calls and would
+  // otherwise split one "N steps" line into two.
+  let trail: Extract<Rendered, { kind: "trail" }> | undefined;
   for (const part of parts) {
     if (part.kind !== "tool") {
       out.push(part);
       continue;
     }
-    const last = out[out.length - 1];
-    if (last && last.kind === "trail") last.steps.push(part.step);
-    else out.push({ kind: "trail", steps: [part.step] });
+    if (trail) trail.steps.push(part.step);
+    else {
+      trail = { kind: "trail", steps: [part.step] };
+      out.push(trail);
+    }
   }
   return out;
 }

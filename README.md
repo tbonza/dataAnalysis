@@ -109,8 +109,8 @@ pnpm demo     # → http://127.0.0.1:8080
 ```
 
 It builds the chat client, starts the MCP and agent servers on loopback, waits for both
-to report healthy, and serves the built client with Vite's preview server proxying the
-rest:
+to report healthy, and serves the built client from its own small server
+(`packages/demo/src/server.ts`) proxying the rest:
 
 | Path | Goes to |
 |---|---|
@@ -125,8 +125,14 @@ unreachable from wherever you're browsing. That is what lets a proxy mount the d
 a path prefix (see below). Only the one port listens externally; :3000 and :3001 stay
 bound to loopback. Ctrl-C stops all three.
 
-To reach it through a proxy, name the hostname you'll use — Vite rejects a `Host` header
-it doesn't recognise, and so do the MCP server's DNS-rebinding guards:
+The front door is ours rather than Vite's preview server, because a proxied deployment
+needs things preview does not promise: a stream that is never buffered or compressed on
+its way through, a real 404 for a missing asset instead of `index.html` under the wrong
+content type, and a `Host` allow-list whose rules are written down here. `pnpm web` still
+uses Vite's dev server; only `pnpm demo` is served this way.
+
+To reach it through a proxy, name the hostname you'll use — the demo rejects a `Host`
+header it doesn't recognise, and so do the MCP server's DNS-rebinding guards:
 
 ```bash
 pnpm demo --allowed-host my-proxy.internal
@@ -181,8 +187,18 @@ and `"Chief Financial Officer"` is one where `"CFO"` is not. Anything else is dr
 the turn streams unframed, so a request never fails over a role the server doesn't know.
 
 Events are `{type: "text" | "tool" | "chart" | "report" | "error" | "done"}`; a `chart`
-event carries the `vlSpec` to render. History is in memory, so it resets when the process
-does.
+event carries the `vlSpec` to render. A `text` event with `delta: true` is one chunk of a
+message still being written — append it to the last one rather than showing it as its own
+block. Prose streams token by token, so a turn reads as it is generated; tool calls and
+charts arrive a graph step at a time as before. History is in memory, so it resets when
+the process does.
+
+The stream is written to survive an intermediary: headers are flushed before the first
+event, `no-transform` and `x-accel-buffering: no` ask proxies not to buffer or compress
+it, a comment frame of padding goes out first for proxies that only flush past a byte
+threshold, and a heartbeat keeps a long turn from hitting an idle timeout. Comment frames
+carry no `data:` line, so a client ignores them. If you see a turn arrive all at once
+through a proxy, that is the thing to look at.
 
 ## Point your own agent at it
 
