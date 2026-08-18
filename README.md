@@ -118,10 +118,12 @@ rest:
 | `/api/*` | the agent server (`/api/chat`, `/api/prompts`, `/api/datasets`, `/api/health`) |
 | `/mcp` | the MCP server |
 
-The client is built with `VITE_AGENT_URL=/api`, so its calls are relative and
-same-origin — there is no absolute `http://127.0.0.1:3001` baked in to be unreachable
-from wherever you're browsing. Only the one port listens externally; :3000 and :3001
-stay bound to loopback. Ctrl-C stops all three.
+The client is built with `VITE_AGENT_URL=api` and Vite's `base` set to `./`, so both its
+API calls and its own JS and CSS are **document-relative** — nothing is resolved against
+the origin root, and there is no absolute `http://127.0.0.1:3001` baked in to be
+unreachable from wherever you're browsing. That is what lets a proxy mount the demo under
+a path prefix (see below). Only the one port listens externally; :3000 and :3001 stay
+bound to loopback. Ctrl-C stops all three.
 
 To reach it through a proxy, name the hostname you'll use — Vite rejects a `Host` header
 it doesn't recognise, and so do the MCP server's DNS-rebinding guards:
@@ -132,7 +134,8 @@ pnpm demo --allowed-host my-proxy.internal
 
 Repeat `--allowed-host`, or hand it a comma-separated list, for more than one. A proxy on
 this machine — a SageMaker notebook's `/proxy/8080/`, say — needs nothing further, since
-the one port is still reached over loopback:
+the one port is still reached over loopback, and the client's relative URLs land inside
+the prefix on their own:
 
 ```bash
 pnpm demo --allowed-host d-xxxxxxxx.studio.us-east-1.sagemaker.aws
@@ -146,8 +149,15 @@ pnpm demo --host 0.0.0.0 --allowed-host my-proxy.internal
 ```
 
 `claude mcp add --transport http chart http://my-proxy.internal:8080/mcp` then works
-through the same address. Naming a host widens the allow-lists rather than disabling
+through the same address — under a path-prefixing proxy, give it the prefixed URL
+(`https://…/proxy/8080/mcp`). Naming a host widens the allow-lists rather than disabling
 them: an unlisted `Host` or `Origin` still gets a 403.
+
+One caveat for a path prefix: open it **with the trailing slash** — `/proxy/8080/`, not
+`/proxy/8080`. Relative URLs resolve against the directory of the current document, so
+without it the browser looks one level too high and every asset 404s (a blank page, and a
+console complaining that the CSS came back as `text/html`). jupyter-server-proxy and
+SageMaker redirect to add the slash; a hand-typed or hand-built link may not.
 
 `pnpm demo` is for constrained environments, not for development — it serves a
 production build, so there's no hot reload. Keep using the three-shell setup above

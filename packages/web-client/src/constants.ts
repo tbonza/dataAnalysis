@@ -2,10 +2,15 @@
  * Every tunable and shared identifier for this package, in one place.
  *
  * Browser-side only — `vite.config.ts` runs in plain Node and must not import this
- * module, since `import.meta.env` is undefined there.
+ * module, since neither `import.meta.env` nor `document` exists there.
  */
 
-export const AGENT_URL = import.meta.env["VITE_AGENT_URL"] ?? "http://127.0.0.1:3001";
+const AGENT_BASE = import.meta.env["VITE_AGENT_URL"] ?? "http://127.0.0.1:3001";
+
+/** Resolved against the document, so the relative base `pnpm demo` bakes in stays inside
+ *  a proxy's path prefix instead of escaping to the origin root. The absolute dev
+ *  fallback passes through unchanged. */
+export const AGENT_URL = new URL(AGENT_BASE, document.baseURI).href.replace(/\/+$/, "");
 
 export const CHAT_PATH = "/chat";
 export const PROMPTS_PATH = "/prompts";

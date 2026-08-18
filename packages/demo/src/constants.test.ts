@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseFlags } from "./constants.js";
+import { AGENT_CLIENT_BASE, AGENT_PREFIX, parseFlags } from "./constants.js";
 
 describe("parseFlags", () => {
   it("accepts both --flag=value and --flag value", () => {
@@ -65,5 +65,24 @@ describe("parseFlags", () => {
 
   it("finds nothing wrong with an empty command line", () => {
     assert.deepEqual(parseFlags([]), { allowedHosts: [], host: undefined, port: undefined, errors: [] });
+  });
+});
+
+describe("the agent prefix", () => {
+  // The proxy table is keyed by the root-absolute form; the client is built with the
+  // relative one so its calls resolve against the document and stay inside a proxy's
+  // path prefix. Both must name the same route or the demo 404s one way or the other.
+  it("is root-absolute for the proxy table and relative for the client", () => {
+    assert.ok(AGENT_PREFIX.startsWith("/"), AGENT_PREFIX);
+    assert.ok(!AGENT_CLIENT_BASE.startsWith("/"), AGENT_CLIENT_BASE);
+    assert.equal(`/${AGENT_CLIENT_BASE}`, AGENT_PREFIX);
+  });
+
+  it("resolves under a proxy path prefix rather than at the origin root", () => {
+    const under = new URL(AGENT_CLIENT_BASE, "https://host.test/proxy/8080/").href;
+    assert.equal(under, "https://host.test/proxy/8080/api");
+
+    const root = new URL(AGENT_CLIENT_BASE, "http://127.0.0.1:8080/").href;
+    assert.equal(root, "http://127.0.0.1:8080/api");
   });
 });

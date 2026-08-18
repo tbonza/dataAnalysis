@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { build, preview } from "vite";
 
 import {
+  AGENT_CLIENT_BASE,
   AGENT_HEALTH_URL,
   AGENT_PORT,
   AGENT_PREFIX,
@@ -160,12 +161,20 @@ async function main(): Promise<void> {
   if (SKIP_BUILD) {
     console.error("Skipping the web client build (DEMO_SKIP_BUILD is set).");
   } else {
-    // Baked into the bundle: the client's API base becomes a relative prefix, so every
-    // call is same-origin and CORS never enters into it. Vite picks `VITE_`-prefixed
-    // keys up from `process.env`, so this needs no `.env` file.
-    process.env["VITE_AGENT_URL"] = AGENT_PREFIX;
+    // Baked into the bundle: the client's API base becomes a document-relative prefix,
+    // so every call is same-origin (CORS never enters into it) and stays inside a
+    // proxy's path prefix rather than escaping to the origin root. Vite picks
+    // `VITE_`-prefixed keys up from `process.env`, so this needs no `.env` file.
+    process.env["VITE_AGENT_URL"] = AGENT_CLIENT_BASE;
     console.error("Building the web client…");
-    await build({ root: WEB_CLIENT_ROOT, logLevel: "warn" });
+    // `base: "./"` for the same reason: the emitted `index.html` asks for
+    // `./assets/…` rather than `/assets/…`, so a proxy serving the demo under a path
+    // prefix (`/proxy/8080/`) doesn't send the browser to the origin root for the JS
+    // and CSS. Set here rather than in web-client/vite.config.ts so `pnpm web` — where
+    // there is no prefix and no build — is untouched, and so `preview()` below keeps
+    // the default base and goes on serving `dist/` at `/`, which is exactly what the
+    // proxy requests once it has stripped its prefix.
+    await build({ root: WEB_CLIENT_ROOT, base: "./", logLevel: "warn" });
   }
 
   console.error(`Starting the MCP server on ${CHILD_HOST}:${MCP_PORT}…`);

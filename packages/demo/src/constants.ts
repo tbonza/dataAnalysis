@@ -135,15 +135,21 @@ export const AGENT_HEALTH_URL = `http://${CHILD_HOST}:${AGENT_PORT}/health`;
 // --- routing --------------------------------------------------------------------
 
 /**
- * The prefix the browser reaches the agent under. Baked into the client at build time
- * as `VITE_AGENT_URL`, so `AGENT_URL` in web-client's own `constants.ts` becomes a
- * relative base and every call is same-origin — which is the whole point: no CORS, and
- * no absolute `http://127.0.0.1:3001` that is unreachable from behind a proxy.
- *
- * The proxy strips it again before forwarding, so agent-server's route constants stay
- * as they are.
+ * The prefix the browser reaches the agent under, as the preview server's proxy table
+ * keys it — root-absolute, because that is the path the proxy hands Vite once it has
+ * stripped its own prefix. The proxy strips this one again before forwarding, so
+ * agent-server's route constants stay as they are.
  */
 export const AGENT_PREFIX = "/api";
+
+/**
+ * The same route, relative rather than root-absolute. This is what gets baked into the
+ * client as `VITE_AGENT_URL`, so `AGENT_URL` in web-client's own `constants.ts` resolves
+ * against the document: every call is same-origin — no CORS, and no absolute
+ * `http://127.0.0.1:3001` unreachable from behind a proxy — and it stays inside a
+ * proxy's path prefix instead of escaping to the origin root.
+ */
+export const AGENT_CLIENT_BASE = AGENT_PREFIX.replace(/^\//, "");
 
 /** Proxied straight through, path intact — the MCP server owns `/mcp` on both sides. */
 export const MCP_PREFIX = "/mcp";
