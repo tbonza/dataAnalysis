@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { __test, applyConfigUI, sanitizeConfigUI } from "./configUI.js";
-import { ConfigControl, ConfigControlInput } from "./schemas.js";
+import type { ConfigControl } from "./schemas.js";
 
 const { setAtPath } = __test;
 
@@ -113,31 +113,5 @@ describe("applyConfigUI", () => {
     const spec = { mark: "bar" };
     assert.equal(applyConfigUI(spec, [], undefined), spec);
     assert.equal(applyConfigUI(spec, undefined, undefined), spec);
-  });
-});
-
-describe("the configUI tool-input schema", () => {
-  // The payload that failed in the demo: a discrete control the model built without
-  // `options`. Strictly validated it took the whole apply_restyle call down with it.
-  const missingOptions = {
-    key: "legend",
-    label: "Legend position",
-    path: ["legend", "orient"],
-    type: "discrete",
-    defaultValue: "right",
-  };
-
-  it("accepts a control the strict shape rejects, so one bad control cannot fail the call", () => {
-    assert.equal(ConfigControl.safeParse(missingOptions).success, false);
-    assert.equal(ConfigControlInput.safeParse(missingOptions).success, true);
-  });
-
-  it("leaves the sanitizer to drop it, which is where the real contract lives", () => {
-    assert.deepEqual(sanitizeConfigUI([missingOptions]), []);
-  });
-
-  it("still rejects a control with no path at all", () => {
-    const { path: _path, ...noPath } = missingOptions;
-    assert.equal(ConfigControlInput.safeParse(noPath).success, false);
   });
 });

@@ -106,9 +106,6 @@ async function main(): Promise<void> {
       configUI: [
         { key: "opacity", label: "opacity", path: ["mark", "opacity"], type: "continuous", min: 0.1, max: 1, step: 0.1, defaultValue: 1 },
         { key: "bad", label: "unsafe", path: ["__proto__", "x"], type: "binary", defaultValue: true },
-        // A discrete control with no `options` — what a model actually produced against
-        // the demo. It must cost a dropped control and a warning, not the whole call.
-        { key: "legend", label: "legend position", path: ["legend", "orient"], type: "discrete", defaultValue: "right" },
       ],
     });
     console.log(`variant ${String(restyled["chartId"])}`);

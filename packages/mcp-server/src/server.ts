@@ -32,7 +32,6 @@ import {
   ChartSpec,
   ChartWarning,
   ConfigControl,
-  ConfigControlInput,
   DataRow,
   DatasetColumnSchema,
   SemanticTypeMap,
@@ -567,14 +566,12 @@ function buildServer(): McpServer {
       inputSchema: z.object({
         chartId: z.string(),
         vlSpec: VegaLiteSpec.describe("Your edited spec, with no data block."),
-        // Deliberately the lenient shape, not `ConfigControl`. A control is decoration
-        // on a restyle; validating it strictly means one malformed control fails the
-        // whole call and the restyle never happens. sanitizeConfigUI drops what it
-        // cannot honour and applyRestyle reports the count, so a bad control costs a
-        // warning instead of the turn. The sanitizer runs regardless — it enforces the
-        // path-traversal rules zod cannot express.
+        // Validated against the real control shape rather than accepted as opaque
+        // records: a malformed control is then a schema error the agent can repair,
+        // instead of being silently dropped by sanitizeConfigUI. That sanitizer still
+        // runs — it enforces the path-traversal rules zod cannot express.
         configUI: z
-          .array(ConfigControlInput)
+          .array(ConfigControl)
           .optional()
           .describe("2-4 follow-up controls; each is a path into the spec plus allowed values."),
       }),
