@@ -2,24 +2,123 @@
  * Every tunable and shared identifier for this package, in one place.
  *
  * This module imports nothing, matching the other packages' `constants.ts`.
+ *
+ * The three per-machine settings — what the one port binds, which port, and which
+ * hostnames may reach it — also take command-line flags, because a proxy's hostname
+ * belongs to the machine you happen to be on and not in a file under version control:
+ *
+ *     pnpm demo --allowed-host my-proxy.internal
+ *
+ * A flag beats the matching environment variable, which beats the default.
  */
+
+// --- flags ----------------------------------------------------------------------
+
+export const USAGE = "Usage: pnpm demo [--allowed-host <host>] [--host <addr>] [--port <n>]";
+
+export interface Flags {
+  allowedHosts: string[];
+  host: string | undefined;
+  port: number | undefined;
+  /** Everything wrong with the command line, in the order it was found. */
+  errors: string[];
+}
+
+/** `--allowed-host` and `--allowedHost` are the same flag; nobody should have to guess. */
+function canonical(name: string): string {
+  return name.toLowerCase().replace(/-/g, "");
+}
+
+/** Comma-separated or repeated — the env var already accepts the former, so the flag does too. */
+function splitHosts(value: string): string[] {
+  return value
+    .split(",")
+    .map((host) => host.trim())
+    .filter((host) => host.length > 0);
+}
+
+/**
+ * `--flag value` and `--flag=value` both work.
+ *
+ * Nothing throws: a bad command line is reported through `FLAG_ERRORS` and raised by
+ * `main()`, because this module is evaluated during `demo.ts`'s import — before the
+ * handler that turns an error into one readable line exists.
+ */
+export function parseFlags(argv: string[]): Flags {
+  const flags: Flags = { allowedHosts: [], host: undefined, port: undefined, errors: [] };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i]!;
+    // `pnpm demo -- --allowed-host x` forwards the separator itself, so it arrives as an
+    // argument like any other. Ignoring it keeps the npm habit from being an error.
+    if (token === "--") continue;
+
+    if (!token.startsWith("--")) {
+      flags.errors.push(`Unexpected argument "${token}".`);
+      continue;
+    }
+
+    const equals = token.indexOf("=");
+    const name = canonical(equals === -1 ? token.slice(2) : token.slice(2, equals));
+    if (name !== "allowedhost" && name !== "host" && name !== "port") {
+      flags.errors.push(`Unknown option "${token}".`);
+      continue;
+    }
+
+    let value: string | undefined;
+    if (equals !== -1) {
+      value = token.slice(equals + 1);
+    } else {
+      // A following `--flag` is the next option, not this one's value.
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        value = next;
+        i += 1;
+      }
+    }
+
+    if (value === undefined || value.length === 0) {
+      flags.errors.push(`--${name === "allowedhost" ? "allowed-host" : name} needs a value.`);
+      continue;
+    }
+
+    if (name === "allowedhost") flags.allowedHosts.push(...splitHosts(value));
+    else if (name === "host") flags.host = value;
+    else {
+      const port = Number(value);
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+        flags.errors.push(`--port needs a port number, got "${value}".`);
+      } else {
+        flags.port = port;
+      }
+    }
+  }
+
+  return flags;
+}
+
+const FLAGS = parseFlags(process.argv.slice(2));
+
+/** Raised by `main()` before anything starts. Empty when the command line is good. */
+export const FLAG_ERRORS: readonly string[] = FLAGS.errors;
 
 // --- the one exposed address --------------------------------------------------
 
-/** What the preview server binds. `0.0.0.0` to reach the demo from another host. */
-export const DEMO_HOST = process.env["DEMO_HOST"] ?? "127.0.0.1";
-export const DEMO_PORT = Number(process.env["DEMO_PORT"] ?? 8080);
+/** What the preview server binds. `0.0.0.0` to reach the demo from another host.
+ *  `--host`, else `DEMO_HOST`. */
+export const DEMO_HOST = FLAGS.host ?? process.env["DEMO_HOST"] ?? "127.0.0.1";
+export const DEMO_PORT = FLAGS.port ?? Number(process.env["DEMO_PORT"] ?? 8080);
 
 /**
- * Hostnames allowed to reach the demo, comma-separated. Vite's preview server rejects
- * a `Host` header it doesn't recognise, so reaching the demo by anything other than
- * localhost requires naming that host here. Also widens the MCP server's own
- * DNS-rebinding guards, so `/mcp` stays usable through the same address.
+ * Hostnames allowed to reach the demo. Vite's preview server rejects a `Host` header it
+ * doesn't recognise, so reaching the demo by anything other than localhost requires
+ * naming that host here. Also widens the MCP server's own DNS-rebinding guards, so
+ * `/mcp` stays usable through the same address.
+ *
+ * `--allowed-host` (repeatable, or comma-separated), else `DEMO_ALLOWED_HOSTS`.
  */
-export const DEMO_ALLOWED_HOSTS = (process.env["DEMO_ALLOWED_HOSTS"] ?? "")
-  .split(",")
-  .map((host) => host.trim())
-  .filter((host) => host.length > 0);
+export const DEMO_ALLOWED_HOSTS =
+  FLAGS.allowedHosts.length > 0 ? FLAGS.allowedHosts : splitHosts(process.env["DEMO_ALLOWED_HOSTS"] ?? "");
 
 // --- the loopback services behind it -------------------------------------------
 

@@ -123,11 +123,26 @@ same-origin — there is no absolute `http://127.0.0.1:3001` baked in to be unre
 from wherever you're browsing. Only the one port listens externally; :3000 and :3001
 stay bound to loopback. Ctrl-C stops all three.
 
-To reach it from another host, bind it and name the hostname you'll use — Vite rejects
-a `Host` header it doesn't recognise, and so do the MCP server's DNS-rebinding guards:
+To reach it through a proxy, name the hostname you'll use — Vite rejects a `Host` header
+it doesn't recognise, and so do the MCP server's DNS-rebinding guards:
 
 ```bash
-DEMO_HOST=0.0.0.0 DEMO_ALLOWED_HOSTS=my-proxy.internal pnpm demo
+pnpm demo --allowed-host my-proxy.internal
+```
+
+Repeat `--allowed-host`, or hand it a comma-separated list, for more than one. A proxy on
+this machine — a SageMaker notebook's `/proxy/8080/`, say — needs nothing further, since
+the one port is still reached over loopback:
+
+```bash
+pnpm demo --allowed-host d-xxxxxxxx.studio.us-east-1.sagemaker.aws
+```
+
+Reaching the demo from a *different* machine additionally means binding something other
+than loopback:
+
+```bash
+pnpm demo --host 0.0.0.0 --allowed-host my-proxy.internal
 ```
 
 `claude mcp add --transport http chart http://my-proxy.internal:8080/mcp` then works
@@ -272,19 +287,24 @@ rather than an error.
 | `AWS_REGION` | `us-east-1` | agent-server |
 | `MCP_ALLOWED_HOSTS` | localhost only | mcp-server (DNS-rebinding guard) |
 | `MCP_ALLOWED_ORIGINS` | localhost only | mcp-server (DNS-rebinding guard) |
-| `DEMO_HOST` | `127.0.0.1` | demo — what the one port binds |
-| `DEMO_PORT` | `8080` | demo |
-| `DEMO_ALLOWED_HOSTS` | *(unset)* | demo — hostnames allowed to reach it, comma-separated |
+| `DEMO_HOST` | `127.0.0.1` | demo — what the one port binds (`--host`) |
+| `DEMO_PORT` | `8080` | demo (`--port`) |
+| `DEMO_ALLOWED_HOSTS` | *(unset)* | demo — hostnames allowed to reach it, comma-separated (`--allowed-host`) |
 | `DEMO_MCP_PORT` | `3000` | demo — loopback port for the MCP child |
 | `DEMO_AGENT_PORT` | `3001` | demo — loopback port for the agent child |
 | `DEMO_SKIP_BUILD` | *(unset)* | demo — reuse the existing `dist/` |
+
+The three `DEMO_` settings with a flag beside them take it on `pnpm demo`'s command line,
+and the flag wins over the variable — a proxy's hostname belongs to the machine you happen
+to be on, not to a file under version control.
 
 Credentials come from the default AWS provider chain — environment, SSO, profile, or
 instance role.
 
 `MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` add to the localhost defaults rather than
 replacing them, so the DNS-rebinding guards stay armed for everything not named.
-`pnpm demo` passes `DEMO_ALLOWED_HOSTS` through to both.
+`pnpm demo` passes its allowed hosts — `--allowed-host` or `DEMO_ALLOWED_HOSTS` — through
+to both.
 
 ## How it works, and what it will not do
 

@@ -26,6 +26,7 @@ import {
   DEMO_ALLOWED_HOSTS,
   DEMO_HOST,
   DEMO_PORT,
+  FLAG_ERRORS,
   MCP_HEALTH_URL,
   MCP_PORT,
   MCP_PREFIX,
@@ -34,6 +35,7 @@ import {
   READY_POLL_INTERVAL_MS,
   SHUTDOWN_GRACE_MS,
   SKIP_BUILD,
+  USAGE,
   WEB_CLIENT_DIR,
 } from "./constants.js";
 
@@ -137,6 +139,11 @@ async function waitForHealth(name: string, url: string, timeoutMs: number): Prom
 // --- main -----------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  // Checked before anything is started: a mistyped flag must not look like it worked.
+  if (FLAG_ERRORS.length > 0) {
+    throw new Error([...FLAG_ERRORS, USAGE].join("\n"));
+  }
+
   for (const [label, port] of [
     ["MCP server", MCP_PORT],
     ["agent server", AGENT_PORT],
