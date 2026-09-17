@@ -19,6 +19,7 @@ import {
   min,
   neq,
   not,
+  parseTableRef,
   sql,
   add,
   sub,
@@ -254,13 +255,16 @@ export function compileQuery(dataset: Dataset, spec: QuerySpec): CompiledQuery {
   /** Everything nameable by where/groupBy/aggregate/select. */
   const known = [...sourceColumns, ...computedNames];
 
-  // mosaic-sql quotes identifiers itself — pass the bare name, not a quoted one.
+  // mosaic-sql quotes identifiers itself — pass a table ref, not a pre-quoted string.
+  // dataset.table may be dot-qualified (e.g. "catalog.regional_sales" for a packaged
+  // dataset); parseTableRef splits on "." itself, so it handles both that and a bare
+  // ephemeral table name identically.
   const from = computed.length
-    ? Query.from(dataset.table).select(
+    ? Query.from(parseTableRef(dataset.table)).select(
         "*",
         Object.fromEntries(computed.map((c) => [c.as, computeExpr(c, sourceColumns)]))
       )
-    : dataset.table;
+    : parseTableRef(dataset.table);
 
   const query = Query.from(from);
 

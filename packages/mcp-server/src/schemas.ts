@@ -6,13 +6,13 @@ import * as z from "zod/v4";
  */
 
 /**
- * A column as DuckDB reports it back through Arrow — the zod twin of `DatasetColumn`
- * in duckdb.ts. Declared once here because three tools return it, and two tools
- * returning "columns" in different shapes is exactly the drift this prevents.
+ * A column as DuckDB reports it back — the zod twin of `DatasetColumn` in duckdb.ts.
+ * Declared once here because three tools return it, and two tools returning "columns"
+ * in different shapes is exactly the drift this prevents.
  */
 export const DatasetColumnSchema = z.object({
   name: z.string(),
-  type: z.string().describe('Arrow type name, e.g. "Utf8", "Int32", "Double".'),
+  type: z.string().describe('DuckDB SQL type name, e.g. "VARCHAR", "BIGINT", "DOUBLE", "DECIMAL(18,3)".'),
 });
 
 /**

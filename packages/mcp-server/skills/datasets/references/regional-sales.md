@@ -14,13 +14,11 @@ itself a source of rows, and the asset behind it is never read directly.
 
 ## Fields
 
-- `region` -- type: string, distinct: 4, values: East, North, South, West
-- `product` -- type: string, distinct: 2, values: Gadget, Widget
-- `quarter` -- type: string, distinct: 4, values: Q1, Q2, Q3, Q4 (one fiscal year, no
-  year column — every row is the same year)
-- `revenue` -- type: number, range: 2700 – 13608 (already region×product×quarter
-  totals, not a per-order amount)
-- `units` -- type: number, range: 180 – 1639
+- `region` -- type: VARCHAR, distinct: 4, values: East, North, South, West
+- `product` -- type: VARCHAR, distinct: 2, values: Gadget, Widget
+- `quarter` -- type: VARCHAR, distinct: 4, values: Q1, Q2, Q3, Q4
+- `revenue` -- type: DOUBLE, range: 2700 – 13608
+- `units` -- type: BIGINT, range: 180 – 1639
 
 ## What it can answer
 

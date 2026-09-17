@@ -8,7 +8,7 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "cli": "tsx src/cli.ts",
-    "create-dataset": "tsx src/createDatasetSkill.ts",
+    "build-catalog": "tsx src/buildCatalog.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts"
   },
@@ -17,7 +17,7 @@
     "skills"
   ],
   "dependencies": {
-    "@duckdb/duckdb-wasm": "1.32.0",
+    "@duckdb/node-api": "1.5.5-r.5",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@uwdata/mosaic-sql": "^0.30.0",

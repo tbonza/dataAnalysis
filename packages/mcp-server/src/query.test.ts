@@ -88,15 +88,20 @@ describe("query compilation", () => {
   });
 
   it("aggregates over a computed column, since compute lands in a subquery", async () => {
+    // No orderBy -- see the note on the LIKE/count_distinct test below on why the
+    // rows need sorting before comparison.
     const { rows } = await run({
       compute: [{ as: "price", left: "revenue", op: "/", right: "units" }],
       groupBy: ["region"],
       aggregate: [{ op: "avg", column: "price", as: "avg_price" }],
     });
-    assert.deepEqual(rows, [
-      { region: "East", avg_price: 14 },
-      { region: "West", avg_price: 16.5 },
-    ]);
+    assert.deepEqual(
+      [...rows].sort((a, b) => String(a["region"]).localeCompare(String(b["region"]))),
+      [
+        { region: "East", avg_price: 14 },
+        { region: "West", avg_price: 16.5 },
+      ]
+    );
   });
 
   it("quotes IN values as literals rather than column references", async () => {
@@ -109,15 +114,22 @@ describe("query compilation", () => {
   });
 
   it("supports LIKE and count_distinct", async () => {
+    // No orderBy in the spec, so row order is whatever the engine's own GROUP BY
+    // execution happens to produce -- not guaranteed by SQL, and no longer
+    // incidentally stable now that the native engine can parallelize the aggregate.
+    // Sort before comparing; only the per-group values are the actual invariant.
     const { rows } = await run({
       where: [{ column: "product", operator: "LIKE", value: "A%" }],
       groupBy: ["region"],
       aggregate: [{ op: "count_distinct", column: "product", as: "products" }],
     });
-    assert.deepEqual(rows, [
-      { region: "East", products: 1 },
-      { region: "West", products: 1 },
-    ]);
+    assert.deepEqual(
+      [...rows].sort((a, b) => String(a["region"]).localeCompare(String(b["region"]))),
+      [
+        { region: "East", products: 1 },
+        { region: "West", products: 1 },
+      ]
+    );
   });
 
   it("escapes string literals rather than letting them break the statement", async () => {
@@ -141,7 +153,21 @@ describe("query validation", () => {
     assert.throws(() => compileQuery(sales, QuerySpec.parse(spec)), pattern);
 
   it("names the available columns when one is unknown", () => {
-    rejects({ select: ["revenue", "profit"] }, /unknown column "profit".*product, region, revenue, units/s);
+    // Column order reflects the engine's own schema inference (insertion order on
+    // Node Neo's read_json_auto, not necessarily alphabetical) -- the set of names is
+    // the invariant that matters for an agent repairing its own spec, not the order.
+    assert.throws(
+      () => compileQuery(sales, QuerySpec.parse({ select: ["revenue", "profit"] })),
+      (err: unknown) => {
+        const message = (err as Error).message;
+        assert.match(message, /unknown column "profit"/);
+        assert.deepEqual(
+          message.match(/Available columns: (.+)\./)?.[1]?.split(", ").sort(),
+          ["product", "region", "revenue", "units"]
+        );
+        return true;
+      }
+    );
   });
 
   it("rejects an ungrouped column beside an aggregate", () => {
@@ -191,13 +217,35 @@ describe("query validation", () => {
 });
 
 describe("engine lockdown", () => {
+  // @duckdb/node-api is a native binding with real filesystem access (unlike
+  // duckdb-wasm's sandboxed Node shim), so `enable_external_access=false` plus a
+  // narrow `allowed_directories` allowlist (the ingest scratch dir and the catalog
+  // database's own directory, both server-decided) is the DB-level guard. That is
+  // defense in depth, not the primary guarantee: no SQL text or path this engine ever
+  // executes comes from the agent (query.ts only emits compiled QuerySpec SQL, and
+  // datasets.ts builds every path server-side from a validated slug).
+
   it("cannot read host files through a table function", async () => {
-    // The WASM sandbox does not contain filesystem access — this build's Node
-    // runtime opens real files — so the guard is DuckDB's own setting.
     await assert.rejects(
       () => execSql("SELECT * FROM read_csv_auto('/etc/hosts')"),
       /disabled by configuration|Permission Error/
     );
+  });
+
+  it("cannot ATTACH a database file outside the allowlist either", async () => {
+    // enable_external_access gates ATTACH exactly like read_csv_auto/read_parquet —
+    // this is the same guard the catalog database's own read-only ATTACH relies on.
+    await assert.rejects(
+      () => execSql("ATTACH '/etc/hosts' AS not_allowed (READ_ONLY)"),
+      /disabled by configuration|Permission Error/
+    );
+  });
+
+  it("can query the attached, read-only catalog database", async () => {
+    // Proves the startup ATTACH (built by `pnpm build-catalog`) actually works end to
+    // end, not just that arbitrary paths are blocked.
+    const { rows } = await execSql('SELECT count(*) AS n FROM "catalog"."regional-sales"');
+    assert.equal(rows[0]?.["n"], 32);
   });
 });
 

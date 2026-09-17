@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   ASSETS_DIRNAME,
-  DATASET_ASSET_EXTENSION,
+  DATASET_PARQUET_EXTENSION,
   REFERENCES_DIRNAME,
 } from "./constants.js";
 import { buildCatalog, datasetsSkill, isValidDatasetName } from "./datasets.js";
@@ -149,8 +149,8 @@ describe("datasets and job-roles", () => {
   const referencesDir = join(skillsDirectory, "datasets", REFERENCES_DIRNAME);
   const assetNames = existsSync(assetsDir)
     ? readdirSync(assetsDir)
-        .filter((f) => f.endsWith(DATASET_ASSET_EXTENSION))
-        .map((f) => f.slice(0, -DATASET_ASSET_EXTENSION.length))
+        .filter((f) => f.endsWith(DATASET_PARQUET_EXTENSION))
+        .map((f) => f.slice(0, -DATASET_PARQUET_EXTENSION.length))
     : [];
   const referenceNames = existsSync(referencesDir)
     ? readdirSync(referencesDir)
@@ -177,13 +177,13 @@ describe("datasets and job-roles", () => {
     for (const name of assetNames) {
       assert.ok(
         referenceSet.has(name),
-        `dataset asset "${name}${DATASET_ASSET_EXTENSION}" has no matching references/${name}.md`
+        `dataset asset "${name}${DATASET_PARQUET_EXTENSION}" has no matching references/${name}.md`
       );
     }
     for (const name of referenceNames) {
       assert.ok(
         assetSet.has(name),
-        `dataset reference "${name}.md" has no matching assets/${name}${DATASET_ASSET_EXTENSION}`
+        `dataset reference "${name}.md" has no matching assets/${name}${DATASET_PARQUET_EXTENSION}`
       );
     }
   });
@@ -194,24 +194,11 @@ describe("datasets and job-roles", () => {
     }
   });
 
-  it("every dataset asset is non-empty, one JSON object per line, sharing one key set", () => {
+  it("every dataset asset is a non-empty parquet file", () => {
     for (const name of assetNames) {
-      const file = `${name}${DATASET_ASSET_EXTENSION}`;
-      const lines = readFileSync(join(assetsDir, file), "utf8")
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-      assert.ok(lines.length > 0, `${file} has no rows`);
-
-      const rows = lines.map((line, i): Record<string, unknown> => {
-        try {
-          return JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          return assert.fail(`${file} line ${i + 1} is not valid JSON`);
-        }
-      });
-      const keySets = new Set(rows.map((r) => JSON.stringify(Object.keys(r).sort())));
-      assert.equal(keySets.size, 1, `${file} rows do not all share the same keys`);
+      const file = `${name}${DATASET_PARQUET_EXTENSION}`;
+      const { size } = statSync(join(assetsDir, file));
+      assert.ok(size > 0, `${file} is empty`);
     }
   });
 
@@ -272,8 +259,8 @@ describe("datasets and job-roles", () => {
     }
   });
 
-  it("every recommended prompt names a dataset that actually exists", () => {
-    const datasetNames = new Set(buildCatalog(datasetsSkillObj).map((d) => d.name));
+  it("every recommended prompt names a dataset that actually exists", async () => {
+    const datasetNames = new Set((await buildCatalog(datasetsSkillObj)).map((d) => d.name));
     for (const prompt of buildPromptLibrary(rolesSkillObj)) {
       assert.ok(
         datasetNames.has(prompt.dataset),

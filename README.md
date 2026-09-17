@@ -13,8 +13,8 @@ so a user can pick a question instead of pasting rows into chat — see
 [Adding a dataset](#adding-a-dataset) below.
 
 Built on [flint-chart](https://github.com/microsoft/flint-chart) for chart compilation
-and [DuckDB-WASM](https://github.com/duckdb/duckdb-wasm) for data, with the analyst
-behaviour adapted from
+and DuckDB, via the native [`@duckdb/node-api`](https://duckdb.org/docs/current/clients/node_neo/overview)
+client, for data, with the analyst behaviour adapted from
 [data-formulator](https://github.com/microsoft/data-formulator).
 
 ```
@@ -34,6 +34,7 @@ packages/demo           runs all three behind one port, for proxied environments
 
 ```bash
 pnpm install
+pnpm build-catalog   # builds the packaged-dataset database -- required before pnpm mcp
 ```
 
 ## Run the MCP server on its own
@@ -44,6 +45,11 @@ credentials**.
 ```bash
 pnpm mcp        # http://127.0.0.1:3000/mcp
 ```
+
+`pnpm mcp` refuses to start if `pnpm build-catalog` hasn't been run yet — packaged
+datasets are prebuilt once, offline, into a DuckDB database file the server opens
+read-only at startup; it never reads a parquet file itself. See
+[Adding a dataset](#adding-a-dataset).
 
 In a second shell, drive it end to end:
 
@@ -241,32 +247,41 @@ permitted set, bodies under 500 lines, and every relative link resolving.
 
 ## Adding a dataset
 
-A packaged dataset is two files under `packages/mcp-server/skills/datasets/` —
-`SKILL.md` is never touched:
+Every packaged dataset is parquet, built into one DuckDB database file before the
+server ever starts — there is exactly one way data enters the catalog. Two source
+locations feed the same build step:
 
-- `assets/<name>.jsonl` — the rows, one JSON object per line. Never loaded into an
-  agent's context; only `load_available_dataset` reads it.
-- `references/<name>.md` — `description:` frontmatter (what the dataset covers and
-  when to reach for it) plus a column-by-column doc in the same style
-  `inspect_dataset` uses. This file *is* loaded into context, as an MCP resource —
-  which is exactly why rows never belong in it.
+- `packages/mcp-server/skills/datasets/assets/<name>.parquet` — small, synthetic
+  examples, **committed and published** (`package.json`'s `files` list includes
+  `skills/`). This is where `regional-sales` lives.
+- `$PARQUET_DATASETS_DIR/<name>.parquet` — real, external data (e.g. an Athena
+  export cached to local disk), **not committed**. Unset ⇒ only the shipped examples
+  are built.
 
-Fast path:
+One command builds (or rebuilds, from scratch) the catalog from whatever's in both
+locations, and regenerates each dataset's `references/<name>.md`:
 
 ```bash
-pnpm create-dataset <name> --from ./rows.json   # a JSON array of row objects, or a .jsonl
+pnpm build-catalog
 ```
 
-It refuses to overwrite an existing dataset or write an invalid name, and its
-generated `references/<name>.md` is spec-compliant on write — `pnpm test` enforces
-the 1:1 pairing between `assets/` and `references/`, so a mismatched or malformed
-dataset fails the suite immediately rather than at demo time. An asset is read whole
-into memory when loaded, so keep them demo-sized.
+`references/<name>.md` — `description:` frontmatter (what the dataset covers and when
+to reach for it) plus a `## Fields` section, one bullet per column, mechanically
+generated from the table's live schema in the same style `inspect_dataset` shows at
+runtime (so the two can never drift). Re-running `pnpm build-catalog` after a parquet
+file changes regenerates only that `## Fields` section — the frontmatter `description`
+and any other section (e.g. `## What it can answer`) are preserved untouched, so you
+can freely add detail by hand and keep it across rebuilds. A dataset with no reference
+doc yet gets one scaffolded with `TODO` placeholders for the prose. This file *is*
+loaded into an agent's context, as an MCP resource; the parquet behind it never is.
 
-Dataset assets are **committed and published** — `packages/mcp-server/package.json`'s
-`files` list includes `skills/`, and nothing in `.gitignore` excludes the `assets/`
-subdirectory. Fine for the synthetic sample shipped here; worth knowing if you're
-adding anything genuinely proprietary.
+`pnpm test` enforces the 1:1 pairing between the catalog's tables and
+`references/*.md`, so a mismatched or malformed dataset fails the suite immediately
+rather than at demo time, and the server itself refuses to start on the same mismatch.
+
+The catalog database is a build artifact (`packages/mcp-server/data/`, gitignored),
+not source — it's never hand-edited, and the live server only ever ATTACHes it
+read-only.
 
 ## Adding a job role or a recommended prompt
 
@@ -284,15 +299,17 @@ prompt name.
 ## Tests and checks
 
 ```bash
-pnpm test        # 133 tests across two suites; needs no credentials
-pnpm typecheck   # all four packages
+pnpm build-catalog   # the mcp-server suite attaches the catalog database, so build it first
+pnpm test            # 135 tests across two suites; needs no credentials
+pnpm typecheck       # all four packages
 ```
 
 The suite covers query compilation and validation, the DuckDB round trip, chart-type
 resolution and flint assembly, the `configUI` sanitizer's prototype-pollution guards,
-skill compliance, and the dataset/job-role library's own integrity (asset↔reference
-pairing, prompt-name uniqueness, every prompt's dataset actually existing). One test
-is a security regression: it asserts that `read_csv_auto('/etc/hosts')` is refused.
+skill compliance, and the dataset/job-role library's own integrity (table↔reference
+pairing, prompt-name uniqueness, every prompt's dataset actually existing). A few tests
+are security regressions: `read_csv_auto('/etc/hosts')` and `ATTACH`ing a database file
+outside the engine's `allowed_directories` are both refused.
 
 The agent server's own suite covers the one thing the browser can't show you without AWS
 credentials: how a `role` is handled. It checks that the name is trimmed and that
@@ -313,6 +330,8 @@ rather than an error.
 | `AWS_REGION` | `us-east-1` | agent-server |
 | `MCP_ALLOWED_HOSTS` | localhost only | mcp-server (DNS-rebinding guard) |
 | `MCP_ALLOWED_ORIGINS` | localhost only | mcp-server (DNS-rebinding guard) |
+| `PARQUET_DATASETS_DIR` | *(unset — only shipped examples build)* | mcp-server, `pnpm build-catalog` |
+| `DATASET_CATALOG_DB_PATH` | `packages/mcp-server/data/catalog.duckdb` | mcp-server, `pnpm build-catalog` |
 | `DEMO_HOST` | `127.0.0.1` | demo — what the one port binds (`--host`) |
 | `DEMO_PORT` | `8080` | demo (`--port`) |
 | `DEMO_ALLOWED_HOSTS` | *(unset)* | demo — hostnames allowed to reach it, comma-separated (`--allowed-host`) |
@@ -334,17 +353,21 @@ to both.
 
 ## How it works, and what it will not do
 
-**Data.** Rows are loaded inline and become a queryable dataset. Transforms are
-declared as a structured `QuerySpec` — filter, group, aggregate, one arithmetic step,
-sort, limit — which is compiled to SQL with
-[mosaic-sql](https://idl.uw.edu/mosaic/api/sql/). Every result registers as a new
-dataset, so multi-step work is a chain of queries.
+**Data.** Rows are loaded inline and become a queryable dataset, or a packaged dataset's
+already-built table is attached in read-only. Transforms are declared as a structured
+`QuerySpec` — filter, group, aggregate, one arithmetic step, sort, limit — which is
+compiled to SQL with [mosaic-sql](https://idl.uw.edu/mosaic/api/sql/). Every result
+registers as a new dataset, so multi-step work is a chain of queries.
 
 Accepting no SQL text is a security property, not just ergonomics: a query cannot name
 a table function, so `read_csv_auto('/etc/passwd')` is unreachable by construction.
-That matters because the WASM sandbox does **not** contain filesystem access — this
-build's Node runtime implements file opens with `fs.openSync` — so DuckDB's own
-`enable_external_access=false` is set as well.
+That matters because `@duckdb/node-api` is a native binding with real filesystem
+access, unlike the sandboxed Node shim a WASM build would have — so DuckDB's own
+`enable_external_access=false`, plus a narrow `allowed_directories` allowlist (only the
+ephemeral ingest scratch directory and the catalog database's own directory, both
+server-decided at startup), is set as well. That is defense in depth on top of the
+primary guarantee above: no path this engine ever opens comes from a request — the
+catalog database's path is fixed at startup, not chosen by a request.
 
 **Charts.** flint-chart compiles a semantic chart spec into Vega-Lite, making layout,
 colour and formatting decisions from the semantic types. Neither server renders: they
@@ -359,8 +382,12 @@ SVG, or a slide.
   discover it.
 - **No joins.** One dataset per query; chaining covers multi-step aggregation.
 - **No caller-supplied file or URL ingestion.** `load_data` takes inline rows only. The
-  packaged-dataset tools do read from disk, but never from a caller-supplied path —
-  `load_available_dataset`'s `name` is a closed enum built from the assets that ship
-  with the server, so the files a request can reach are fixed at startup, not chosen
-  by the request.
-- **Nothing persists.** Datasets and charts live in memory and die with the process.
+  packaged-dataset tools never read a caller-supplied path, or even a raw parquet file
+  at request time — `load_available_dataset`'s `name` is a closed enum built from the
+  catalog database `pnpm build-catalog` produced before the server started, so the
+  tables a request can reach are fixed at startup, not chosen by the request.
+- **Nothing persists — for session data.** Pasted rows and query-chain results live in
+  memory and die with the process. Packaged datasets are the one exception by design:
+  they're prebuilt once, offline, into a read-only database file so the server never
+  has to touch parquet itself; `pnpm build-catalog` rebuilds it whenever the source
+  files change.

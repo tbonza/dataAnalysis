@@ -106,14 +106,38 @@ export const SKILL_FILENAME = "SKILL.md";
 export const REFERENCES_DIRNAME = "references";
 export const ASSETS_DIRNAME = "assets";
 
-/** The one skill holding every packaged dataset: rows under `assets/`, per-dataset
- *  documentation under `references/`. */
+/** The one skill holding every packaged dataset: parquet sources under `assets/` (and,
+ *  optionally, `$PARQUET_DATASETS_DIR`), per-dataset documentation under `references/`. */
 export const DATASETS_SKILL_NAME = "datasets";
 
 /** The one skill holding job-role personas and their recommended prompts. */
 export const JOB_ROLES_SKILL_NAME = "job-roles";
 
-export const DATASET_ASSET_EXTENSION = ".jsonl";
+export const DATASET_PARQUET_EXTENSION = ".parquet";
+
+// --- parquet-backed dataset catalog -------------------------------------------
+
+/** External directory of cached Athena parquet exports, one file = one dataset,
+ *  merged with the committed examples under `skills/datasets/assets/` when
+ *  `pnpm build-catalog` runs. Unset ⇒ only the committed examples are built. Never
+ *  read directly by the live server — only `buildCatalog.ts` touches raw parquet. */
+export const PARQUET_DATASETS_DIR = process.env["PARQUET_DATASETS_DIR"];
+
+/** Where `pnpm build-catalog` writes the prebuilt catalog database, and where the
+ *  live server ATTACHes it read-only at startup. Bare env read only — the default
+ *  absolute path is resolved in paths.ts, the same way skills.ts resolves SKILLS_DIR,
+ *  since this module imports nothing. */
+export const DATASET_CATALOG_DB_PATH = process.env["DATASET_CATALOG_DB_PATH"];
+
+/** The ATTACHed catalog database's alias — packaged dataset tables are queried as
+ *  `catalog.<name>`, never copied into the ephemeral main database. */
+export const CATALOG_DATABASE_ALIAS = "catalog";
+
+/** Prefix for the scratch directory `load_data`'s inline-row ingestion writes a real
+ *  temp file through — Node Neo has no virtual filesystem the way duckdb-wasm did, so
+ *  a real file is unavoidable. This directory is one of the two `allowed_directories`
+ *  entries the engine trusts. */
+export const INGEST_SCRATCH_DIR_PREFIX = "mcp-server-duckdb-";
 
 /** Marks a registered prompt as part of the recommended-prompt library, so a client
  *  can tell those apart from the per-skill loader prompts. */
