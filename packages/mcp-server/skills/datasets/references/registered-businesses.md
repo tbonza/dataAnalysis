@@ -89,3 +89,14 @@ specific film shoot or food-truck permit.
   Filter or aggregate it down with an ordinary query first, then join that result.
 - **`regional-sales` does not join with either SF dataset** — a different, unrelated
   domain (abstract regions and products), no shared key.
+
+## Source
+
+[Registered Business Locations - San Francisco](https://data.sf.gov/Economy-and-Community/Registered-Business-Locations-San-Francisco/g8m3-pdis/about_data)
+(Socrata ID `g8m3-pdis`), maintained by the SF Office of the Treasurer & Tax Collector —
+sourced from business registration applications, account update/closure forms, and
+taxpayer filings, and **updated daily**. `Self-Reported NAICS Code` is exactly that: a
+value the business self-reports at registration, not verified by the Treasurer and not
+used to determine tax rates — a change made in July 2026 (following SF Prop M) that also
+deprecated the old NAICS-description columns, consistent with this dataset already
+having no such column.

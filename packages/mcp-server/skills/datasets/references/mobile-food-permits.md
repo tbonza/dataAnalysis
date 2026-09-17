@@ -80,3 +80,13 @@ WKT `Business Location` string rather than numeric columns, and nothing here par
 Matching by name (`Applicant` vs. its `Ownership Name`/`DBA Name`) is a much weaker
 option — naming conventions differ (LLC suffixes, abbreviations, punctuation) and would
 produce a low, misleading match rate.
+
+## Source
+
+[Mobile Food Facility Permit](https://data.sf.gov/Economy-and-Community/Mobile-Food-Facility-Permit/rqzj-sfat/about_data)
+(Socrata ID `rqzj-sfat`), maintained by SF Public Works — this dataset's columns
+(`Applicant`, `FacilityType`, `Status`, `Schedule`, `dayshours`, ...) match it exactly.
+A related but separate upstream dataset,
+[Mobile Food Schedule](https://data.sf.gov/Economy-and-Community/Mobile-Food-Schedule/jjew-r69b/about_data)
+(`jjew-r69b`), publishes one row per recurring day/start-time/end-time slot for each
+permit (no `Status` or approval columns) and is not currently packaged here.

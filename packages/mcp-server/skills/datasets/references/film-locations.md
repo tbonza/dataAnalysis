@@ -69,3 +69,11 @@ business registration or food-truck permit.
   See the **data-query** skill's `references/spatial-join.md`.
 - **`regional-sales` does not join with either SF dataset** — a different, unrelated
   domain (abstract regions and products), no shared key.
+
+## Source
+
+[Film Locations in San Francisco](https://data.sf.gov/Culture-and-Recreation/Film-Locations-in-San-Francisco/yitu-d5am/about_data)
+(Socrata ID `yitu-d5am`), maintained by the San Francisco Film Commission.
+`Longitude`/`Latitude`, `Supervisor District`, and `Analysis Neighborhood` were added to
+the upstream dataset in December 2024 by geocoding the `Locations` text column — a blank
+value in any of those three columns means geocoding wasn't possible for that row.
