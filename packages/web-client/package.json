@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "tsx --test src/*.test.ts",
+    "test": "tsx --test --import ./src/testSetup.ts src/*.test.ts src/*.test.tsx",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -18,9 +18,12 @@
     "vega-lite": "^6.0.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/jsdom": "^30.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.0",
+    "jsdom": "^27.4.0",
     "vite": "^8.2.1"
   }
 }

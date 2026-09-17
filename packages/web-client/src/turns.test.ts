@@ -31,10 +31,10 @@ describe("streamed text", () => {
     ]);
   });
 
-  it("does not swallow a report into the answer above it", () => {
+  it("does not swallow a report into the answer above it, and marks it as a report", () => {
     const parts = log([delta("Here it is."), { type: "report", markdown: "# Report" }]);
     assert.equal(parts.length, 2);
-    assert.deepEqual(parts[1], { kind: "text", text: "# Report" });
+    assert.deepEqual(parts[1], { kind: "text", text: "# Report", report: true });
   });
 
   it("starts a new part when a chart interrupts the prose", () => {

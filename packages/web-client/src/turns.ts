@@ -12,7 +12,7 @@ export interface Step {
 }
 
 export type Part =
-  | { kind: "text"; text: string; delta?: true }
+  | { kind: "text"; text: string; delta?: true; report?: true }
   | { kind: "tool"; step: Step }
   | { kind: "chart"; chartId: string; spec: Record<string, unknown> }
   | { kind: "error"; message: string };
@@ -35,7 +35,7 @@ export function partFor(event: AgentEvent): Part | undefined {
     case "text":
       return event.delta ? { kind: "text", text: event.text, delta: true } : { kind: "text", text: event.text };
     case "report":
-      return { kind: "text", text: event.markdown };
+      return { kind: "text", text: event.markdown, report: true };
     case "tool":
       return {
         kind: "tool",
