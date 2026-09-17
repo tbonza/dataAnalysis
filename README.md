@@ -29,7 +29,7 @@ packages/demo           runs all three behind one port, for proxied environments
 ```bash
 nvm use                              # Node 24, per .nvmrc
 pnpm install
-tar -xzf <data-archive>.tar.gz       # the cache and the prebuilt database
+tar -xzf <data-archive>.tar.gz       # the prebuilt DuckDB database
 pnpm demo                            # → http://127.0.0.1:8080
 ```
 
@@ -58,36 +58,35 @@ the MCP server, the CLI walkthrough, the full test suite — runs without them.
 
 ## Getting the data
 
-A skill is read into an agent's context, so no parquet file lives in one — and none is
-committed anywhere else either. Data reaches a machine through one archive, which
-carries both halves:
-
-```
-.cache/example-data/<group>/…          source data, one subdirectory per origin
-packages/mcp-server/data/catalog.db    the prebuilt DuckDB database
-```
+A skill is read into an agent's context, so no parquet file lives in one — and no dataset
+is committed anywhere else either. What ships instead is the built DuckDB database:
 
 ```bash
 tar -xzf <data-archive>.tar.gz         # from the repo root
 ```
 
-**Only the database is needed to run anything.** The MCP server ATTACHes it read-only at
-startup and never opens a parquet file, so a machine that has `catalog.db` and no cache
-at all works fine. The cache is what `pnpm build-catalog` reads when you want to
-*rebuild* that database — adding a dataset, or picking up changed source data. It's a
-rebuild step, not part of setup, and running it with no cache present is a no-op that
-leaves the existing database alone.
+That restores `packages/mcp-server/data/catalog.db`, and **that one file is everything
+needed to run**. The MCP server ATTACHes it read-only at startup and never opens a parquet
+file, so a machine with the database and no cache at all is fully working — every command
+in this README, the demo included, runs from it. `pnpm build-catalog` on such a machine
+prints "Nothing to build" and leaves the database exactly as it was, so there is nothing
+you have to avoid running.
 
-To produce an archive from a machine that has both:
+The cache is the other half of that split, and it is **not** distributed:
+`.cache/example-data/<group>/` holds the parquet and CSV that `pnpm build-catalog` reads
+when it *rebuilds* the database. You need one only to add a dataset or pick up changed
+source data — and at that point you're bringing your own source files anyway. See
+[Adding a dataset](#adding-a-dataset).
+
+To produce an archive from a machine that has a built database:
 
 ```bash
-tar -czf <data-archive>.tar.gz .cache/example-data packages/mcp-server/data
+tar -czf <data-archive>.tar.gz packages/mcp-server/data
 ```
 
-Both paths are gitignored, as is the whole of `.cache/`. Anything under `.cache/` outside
-`example-data/` is ignored by the build — `.cache/raw/` is a convenient place to keep
-original downloads whose filenames don't match dataset names, so they don't get picked up
-as datasets in their own right.
+`.cache/`, `packages/mcp-server/data/` and `*.tar.gz` are all gitignored. Anything under
+`.cache/` outside `example-data/` is ignored by the build, so `.cache/raw/` is a
+convenient place to park original downloads whose filenames don't match dataset names.
 
 ## Run the MCP server on its own
 
@@ -375,8 +374,8 @@ cache — fails here rather than at demo time. The server refuses to start on th
 mismatch.
 
 Then repack the archive (see [Getting the data](#getting-the-data)) so other machines get
-both the new source file and the rebuilt database. The catalog database is a build
-artifact, never hand-edited, and the live server only ever ATTACHes it read-only.
+the rebuilt database. The catalog database is a build artifact, never hand-edited, and the
+live server only ever ATTACHes it read-only.
 
 ## Adding a job role or a recommended prompt
 
