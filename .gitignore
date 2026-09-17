@@ -6,6 +6,10 @@ dist
 # Built by `pnpm build-catalog` -- a build artifact, never hand-edited or committed.
 packages/mcp-server/data/
 
+# Source data, never committed -- unpacked from the data archive, or built locally.
+# `.cache/example-data/<group>/` is what `pnpm build-catalog` reads.
+.cache/
+
 # Data
 *.csv
 *.parquet

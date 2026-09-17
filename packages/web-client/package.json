@@ -4,6 +4,9 @@
   "description": "Chat client that renders charts inline from the agent server's stream.",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -4,6 +4,9 @@
   "description": "Runs the MCP server, the agent server and the built chat client behind one port.",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "tsx src/demo.ts",
     "test": "tsx --test src/*.test.ts",

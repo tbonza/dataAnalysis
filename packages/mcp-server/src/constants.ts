@@ -113,10 +113,11 @@ export const ALLOWED_FRONTMATTER_FIELDS = [
 export const SKILLS_DIRNAME = "skills";
 export const SKILL_FILENAME = "SKILL.md";
 export const REFERENCES_DIRNAME = "references";
-export const ASSETS_DIRNAME = "assets";
 
-/** The one skill holding every packaged dataset: parquet sources under `assets/` (and,
- *  optionally, `$PARQUET_DATASETS_DIR`), per-dataset documentation under `references/`. */
+/** The one skill documenting every packaged dataset. Prose only: one file per catalog
+ *  table under `references/`, describing a table the agent can load. The data itself
+ *  lives in the cache (`$DATA_CACHE_DIR`) and never in the skill -- a skill is read
+ *  into an agent's context, and a parquet file has no business being there. */
 export const DATASETS_SKILL_NAME = "datasets";
 
 /** The one skill holding job-role personas and their recommended prompts. */
@@ -126,13 +127,14 @@ export const DATASET_PARQUET_EXTENSION = ".parquet";
 
 // --- parquet-backed dataset catalog -------------------------------------------
 
-/** External directory of cached Athena parquet exports, one file = one dataset,
- *  merged with the committed examples under `skills/datasets/assets/` when
- *  `pnpm build-catalog` runs. Bare env read only — the default (this repo's own
- *  `example_data/parquet`) is resolved in paths.ts, the same way it resolves
- *  DATASET_CATALOG_DB_PATH just below. Never read directly by the live server — only
- *  `buildCatalog.ts` touches raw parquet. */
-export const PARQUET_DATASETS_DIR = process.env["PARQUET_DATASETS_DIR"];
+/** Root of the local data cache. Holds one subdirectory per source group (e.g.
+ *  `sf-open-data/`, `mock-sales-data/`), and every `.parquet` or `.csv` inside one of
+ *  those is a dataset, named by its file stem. Read by `pnpm build-catalog` only —
+ *  the live server never touches the cache, only the database that build produces, so
+ *  a machine can run the server with no cache at all. Bare env read only — the default
+ *  (this repo's own `.cache/example-data`) is resolved in paths.ts, the same way it
+ *  resolves DATASET_CATALOG_DB_PATH just below. */
+export const DATA_CACHE_DIR = process.env["DATA_CACHE_DIR"];
 
 /** Where `pnpm build-catalog` writes the prebuilt catalog database, and where the
  *  live server ATTACHes it read-only at startup. Bare env read only — the default

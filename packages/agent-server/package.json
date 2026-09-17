@@ -4,6 +4,9 @@
   "description": "Reference consumer: a deep agent whose only capability is the chart MCP tool.",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",

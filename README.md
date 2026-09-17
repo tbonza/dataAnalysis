@@ -8,7 +8,7 @@ authors query and chart specs, and the server executes, validates and compiles t
 Everything an agent needs to know is in the tool schemas and the eight **Agent Skills**
 the server exposes as MCP resources — so any team's existing agent can use it without
 inheriting anything from the agent in this repo. Two of those skills, `datasets` and
-`job-roles`, package proprietary-looking sample data and an executive prompt library
+`job-roles`, document a catalog of ready-to-query tables and an executive prompt library
 so a user can pick a question instead of pasting rows into chat — see
 [Adding a dataset](#adding-a-dataset) below.
 
@@ -24,18 +24,70 @@ packages/web-client     chat UI that renders the returned specs inline.
 packages/demo           runs all three behind one port, for proxied environments.
 ```
 
-## Requirements
-
-- **Node 20+** (developed on 26) and **pnpm 10** (`packageManager` pins 10.29.2)
-- **AWS credentials with Bedrock access** — only for the agent server. The MCP server
-  and its whole test suite run without them.
-
-## Install
+## Quickstart
 
 ```bash
+nvm use                              # Node 24, per .nvmrc
 pnpm install
-pnpm build-catalog   # builds the packaged-dataset database -- required before pnpm mcp
+tar -xzf <data-archive>.tar.gz       # the cache and the prebuilt database
+pnpm demo                            # → http://127.0.0.1:8080
 ```
+
+That is the whole setup. Only `pnpm demo` needs AWS credentials; every other path here —
+the MCP server, the CLI walkthrough, the full test suite — runs without them.
+
+## Requirements
+
+- **Node 24+.** `.nvmrc` pins it and every package's `engines` field requires it, so
+  `nvm use` in this directory is the one setup step that's easy to skip. `.npmrc` sets
+  `engine-strict=true`, which turns a wrong version into a loud failure rather than a
+  half-working install:
+
+  ```
+  ERR_PNPM_UNSUPPORTED_ENGINE  Unsupported environment (bad pnpm and/or Node.js version)
+  ```
+
+  If `pnpm` is missing entirely (`pnpm: command not found`), nvm isn't loaded in that
+  shell — run `nvm use`, then `corepack enable pnpm` if it's still absent. A system Node
+  on `PATH` will shadow nvm's in any shell that doesn't source it, which is the usual
+  cause.
+- **pnpm 10** — `packageManager` pins 10.29.2, and corepack installs it for you.
+- **AWS credentials with Bedrock access** — only for the agent server. The MCP server
+  and its whole test suite run without them.
+- **The data archive** — see below. No dataset is committed to this repo.
+
+## Getting the data
+
+A skill is read into an agent's context, so no parquet file lives in one — and none is
+committed anywhere else either. Data reaches a machine through one archive, which
+carries both halves:
+
+```
+.cache/example-data/<group>/…          source data, one subdirectory per origin
+packages/mcp-server/data/catalog.db    the prebuilt DuckDB database
+```
+
+```bash
+tar -xzf <data-archive>.tar.gz         # from the repo root
+```
+
+**Only the database is needed to run anything.** The MCP server ATTACHes it read-only at
+startup and never opens a parquet file, so a machine that has `catalog.db` and no cache
+at all works fine. The cache is what `pnpm build-catalog` reads when you want to
+*rebuild* that database — adding a dataset, or picking up changed source data. It's a
+rebuild step, not part of setup, and running it with no cache present is a no-op that
+leaves the existing database alone.
+
+To produce an archive from a machine that has both:
+
+```bash
+tar -czf <data-archive>.tar.gz .cache/example-data packages/mcp-server/data
+```
+
+Both paths are gitignored, as is the whole of `.cache/`. Anything under `.cache/` outside
+`example-data/` is ignored by the build — `.cache/raw/` is a convenient place to keep
+original downloads whose filenames don't match dataset names, so they don't get picked up
+as datasets in their own right.
 
 ## Run the MCP server on its own
 
@@ -46,10 +98,10 @@ credentials**.
 pnpm mcp        # http://127.0.0.1:3000/mcp
 ```
 
-`pnpm mcp` refuses to start if `pnpm build-catalog` hasn't been run yet — packaged
-datasets are prebuilt once, offline, into a DuckDB database file the server opens
-read-only at startup; it never reads a parquet file itself. See
-[Adding a dataset](#adding-a-dataset).
+`pnpm mcp` refuses to start without `packages/mcp-server/data/catalog.db` — unpack the
+data archive, or run `pnpm build-catalog` to build one. Packaged datasets are prebuilt
+offline into a DuckDB database the server opens read-only at startup; it never reads a
+parquet file itself. See [Getting the data](#getting-the-data).
 
 In a second shell, drive it end to end:
 
@@ -64,12 +116,15 @@ http://127.0.0.1:3000/health` lists the loaded skills, the packaged datasets, an
 executive prompt library's names.
 
 There is also a packaged-data path, so a caller never has to type rows in:
-`list_available_datasets` returns the catalog — `regional-sales` ships with the
-package; more appear automatically if `example_data/parquet` (built via `pnpm
-csv-to-parquet`) exists locally, see [Adding a dataset](#adding-a-dataset) — and
-`load_available_dataset({ name })` mints a `datasetId` exactly like `load_data`
-does. From there `inspect_dataset` → `query` → `create_chart` work identically
-regardless of where the data came from.
+`list_available_datasets` returns whatever the catalog database holds, and
+`load_available_dataset({ name })` mints a `datasetId` exactly like `load_data` does.
+From there `inspect_dataset` → `query` → `create_chart` work identically regardless of
+where the data came from. See [Adding a dataset](#adding-a-dataset) to put something new
+into the catalog.
+
+To look at a spec without running the client, `pnpm preview-chart <spec.json> [out.html]`
+writes a self-contained HTML page you can just open. It's a local development aid, no
+part of the MCP surface.
 
 ## Run the whole demo
 
@@ -98,7 +153,9 @@ version. Pick *Anyone* in the picker, or clear the chip with `×`, to go back to
 unframed answer. Either way you get a chart with no data pasted into chat, and a
 follow-up like *"make the bars green"* exercises the restyle path. The agent's tool
 calls fold into one collapsed *N steps* line per turn — open it to see each call and
-its arguments; text and charts stay inline. The flyout is served by `GET
+its arguments; text and charts stay inline. A rendered chart carries a **Download PNG**
+button once it has drawn, and a generated report summary a **Copy** button, so you can
+get either out of the page without resorting to a screenshot. The flyout is served by `GET
 :3001/prompts`, which groups the MCP server's prompt library by dataset then role;
 `GET :3001/datasets` proxies the catalog the same way.
 
@@ -107,7 +164,7 @@ login`) **and restart the agent server** — it resolves credentials once at sta
 running process keeps using the stale ones. `curl -s http://127.0.0.1:3001/health` shows
 which tools and skills it picked up from the MCP server.
 
-## Run it behind one port
+## Run `pnpm demo` behind one port
 
 Three ports don't survive a network proxy that only exposes one address. `pnpm demo`
 puts everything behind a single port instead — one shell, no CORS:
@@ -249,45 +306,77 @@ permitted set, bodies under 500 lines, and every relative link resolving.
 
 ## Adding a dataset
 
-Every packaged dataset is parquet, built into one DuckDB database file before the
-server ever starts — there is exactly one way data enters the catalog. Two source
-locations feed the same build step:
+The `datasets` skill holds prose only — one `references/<name>.md` per table. The data
+lives in the cache, and the catalog database is what the server actually reads. Adding a
+dataset means putting a file in the cache and rebuilding.
 
-- `packages/mcp-server/skills/datasets/assets/<name>.parquet` — small, synthetic
-  examples, **committed and published** (`package.json`'s `files` list includes
-  `skills/`). This is where `regional-sales` lives.
-- `$PARQUET_DATASETS_DIR/<name>.parquet` — real, external data (e.g. an Athena
-  export cached to local disk), **not committed**. Defaults to this repo's own
-  `example_data/parquet` (populated by `pnpm csv-to-parquet` from
-  `example_data/sf-open-data/*.csv`, itself gitignored) so a bare `pnpm build-catalog`
-  picks up whatever's there with no env var needed; a missing directory just means the
-  shipped examples are built alone, same as before. Override the variable to point at
-  a different external cache instead.
+### 1. Put the file in a cache group
 
-One command builds (or rebuilds, from scratch) the catalog from whatever's in both
-locations, and regenerates each dataset's `references/<name>.md`:
+```
+.cache/example-data/<group>/<name>.parquet     # or <name>.csv
+```
+
+Groups (`sf-open-data/`, `mock-sales-data/`, …) organise the cache by where the data came
+from. They don't namespace the dataset, so the same name in two groups is refused; add a
+new group directory whenever a new origin deserves one.
+
+**The filename stem becomes the dataset name**, and it has to be a valid slug —
+`^[a-z0-9]+(-[a-z0-9]+)*$`, 64 characters or fewer. Rename the file rather than fighting
+this later: `registered-businesses.parquet`, not
+`Registered_Business_Locations_-_San_Francisco_20260916.parquet`.
+
+CSV is fine. `pnpm build-catalog` converts any `.csv` that has no parquet beside it yet,
+in place, scanning the whole file for type inference rather than sampling a few rows — a
+sampled guess risks a type mismatch partway through a large file. Already-converted files
+are skipped, so re-running costs nothing. (`pnpm csv-to-parquet <in-dir> <out-dir>` does
+the same conversion standalone if you'd rather do it as its own step.)
+
+### 2. Build
 
 ```bash
 pnpm build-catalog
 ```
 
-`references/<name>.md` — `description:` frontmatter (what the dataset covers and when
-to reach for it) plus a `## Fields` section, one bullet per column, mechanically
-generated from the table's live schema in the same style `inspect_dataset` shows at
-runtime (so the two can never drift). Re-running `pnpm build-catalog` after a parquet
-file changes regenerates only that `## Fields` section — the frontmatter `description`
-and any other section (e.g. `## What it can answer`) are preserved untouched, so you
-can freely add detail by hand and keep it across rebuilds. A dataset with no reference
-doc yet gets one scaffolded with `TODO` placeholders for the prose. This file *is*
-loaded into an agent's context, as an MCP resource; the parquet behind it never is.
+Rebuilds `packages/mcp-server/data/catalog.db` from scratch from everything in the cache,
+and scaffolds `references/<name>.md` for any dataset that doesn't have one yet.
 
-`pnpm test` enforces the 1:1 pairing between the catalog's tables and
-`references/*.md`, so a mismatched or malformed dataset fails the suite immediately
-rather than at demo time, and the server itself refuses to start on the same mismatch.
+### 3. Write the reference doc
 
-The catalog database is a build artifact (`packages/mcp-server/data/`, gitignored),
-not source — it's never hand-edited, and the live server only ever ATTACHes it
-read-only.
+A scaffolded doc arrives full of `TODO`s, and `build-catalog` says so at the end if any
+remain. This file **is** loaded into an agent's context, as an MCP resource — the parquet
+behind it never is — so it's the only thing telling an agent whether the dataset answers
+a question. Fill in:
+
+- **`description:` frontmatter** — what it covers and when to reach for it. It must
+  contain "Use when" (or "Use before" / "Use whenever"); a test enforces that, because a
+  description that doesn't say *when* is useless at selection time.
+- **the preamble** — provenance in a line, any caveats, and the
+  `load_available_dataset({ name: "<name>" })` call.
+- **`## What it can answer`** — including what it *can't*, which is what stops an agent
+  force-fitting it to the wrong question.
+- **`## Joining with other datasets`** — name each sibling and say whether it joins.
+- **`## Source`** — upstream link, portal or dataset ID, maintaining agency, how any
+  derived column was produced, and the update cadence.
+
+Leave **`## Fields`** alone. It's generated from the live schema in the same style
+`inspect_dataset` uses at runtime, so the two can't drift; every rebuild rewrites that
+one section and preserves the rest byte-for-byte, so hand-written prose survives.
+`references/mobile-food-permits.md` is the fullest model to copy.
+
+### 4. Check it
+
+```bash
+pnpm test
+```
+
+The suite enforces a 1:1 pairing between catalog tables and `references/*.md` in both
+directions, so a dataset with no doc — or a doc whose table you've since dropped from the
+cache — fails here rather than at demo time. The server refuses to start on the same
+mismatch.
+
+Then repack the archive (see [Getting the data](#getting-the-data)) so other machines get
+both the new source file and the rebuilt database. The catalog database is a build
+artifact, never hand-edited, and the live server only ever ATTACHes it read-only.
 
 ## Adding a job role or a recommended prompt
 
@@ -305,10 +394,13 @@ prompt name.
 ## Tests and checks
 
 ```bash
-pnpm build-catalog   # the mcp-server suite attaches the catalog database, so build it first
-pnpm test            # 191 tests across four packages' suites; needs no credentials
+pnpm test            # 195 tests across four packages' suites; needs no credentials
 pnpm typecheck       # all four packages
 ```
+
+The mcp-server suite ATTACHes the catalog database, so
+`packages/mcp-server/data/catalog.db` has to exist — unpack the data archive first, or
+run `pnpm build-catalog`. No part of the suite needs AWS credentials.
 
 The suite covers query compilation and validation, the DuckDB round trip, chart-type
 resolution and flint assembly, the `configUI` sanitizer's prototype-pollution guards,
@@ -333,10 +425,10 @@ rather than an error.
 | `CLIENT_ORIGIN` | `http://127.0.0.1:5173` | agent-server (CORS) |
 | `VITE_AGENT_URL` | `http://127.0.0.1:3001` | web-client |
 | `BEDROCK_MODEL_ID` | `us.anthropic.claude-sonnet-5` | agent-server |
-| `AWS_REGION` | `us-east-1` | agent-server |
+| `AWS_REGION` | `AWS_DEFAULT_REGION`, then `us-east-1` | agent-server |
 | `MCP_ALLOWED_HOSTS` | localhost only | mcp-server (DNS-rebinding guard) |
 | `MCP_ALLOWED_ORIGINS` | localhost only | mcp-server (DNS-rebinding guard) |
-| `PARQUET_DATASETS_DIR` | `example_data/parquet` (falls back to shipped examples alone if missing) | mcp-server, `pnpm build-catalog` |
+| `DATA_CACHE_DIR` | `.cache/example-data` | `pnpm build-catalog` only — the live server never reads the cache |
 | `DATASET_CATALOG_DB_PATH` | `packages/mcp-server/data/catalog.db` | mcp-server, `pnpm build-catalog` |
 | `DEMO_HOST` | `127.0.0.1` | demo — what the one port binds (`--host`) |
 | `DEMO_PORT` | `8080` | demo (`--port`) |
@@ -356,6 +448,19 @@ instance role.
 replacing them, so the DNS-rebinding guards stay armed for everything not named.
 `pnpm demo` passes its allowed hosts — `--allowed-host` or `DEMO_ALLOWED_HOSTS` — through
 to both.
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `pnpm: command not found` | nvm isn't loaded in this shell. `nvm use`, then `corepack enable pnpm` if it's still missing. A system Node on `PATH` shadows nvm's in any shell that doesn't source it — that's the usual reason. |
+| `ERR_PNPM_UNSUPPORTED_ENGINE` on install | Node is older than 24. `nvm use` (`.nvmrc` pins it). `.npmrc` sets `engine-strict=true`, so this fails outright instead of half-working. |
+| `No catalog database at …`, MCP server exits 1 | Unpack the data archive, or run `pnpm build-catalog`. Under `pnpm demo` it surfaces as *"The MCP server exited unexpectedly (1)"* a second or two in. |
+| `pnpm build-catalog` prints "Nothing to build" | The cache is empty or absent. That's a no-op by design, and your existing database is left exactly as it was. |
+| Startup looked fine; the first message fails | AWS credentials. They resolve lazily, so `/health` returns 200 without them and the demo still prints *"Demo ready"* — the failure only appears in the browser. Refresh them (e.g. `aws sso login`) **and restart the agent server**, which resolves credentials once at startup. |
+| `pnpm demo` serves a blank page, assets 404 | Either `DEMO_SKIP_BUILD` is set with no `packages/web-client/dist/` to reuse — nothing checks for this, so it starts and 404s quietly — or you opened a proxy path without its trailing slash. |
+| `Port 3000 is already in use` | Something is still bound from a previous run; `pnpm demo` checks both child ports before starting anything. |
+| A reference doc has no matching table, or vice versa | The cache and the database disagree. `pnpm build-catalog` to re-sync, or delete the stale doc. Both `pnpm test` and server startup refuse the mismatch. |
 
 ## How it works, and what it will not do
 

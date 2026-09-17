@@ -4,6 +4,9 @@
   "description": "MCP tool for data analysis and charts. Deterministic: no LLM, no credentials.",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "main": "./src/index.ts",
   "scripts": {
     "start": "tsx src/server.ts",

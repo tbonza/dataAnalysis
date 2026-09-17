@@ -1,26 +1,29 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { DATASET_PARQUET_EXTENSION, DATASETS_SKILL_NAME } from "./constants.js";
+import { DATASET_PARQUET_EXTENSION } from "./constants.js";
+import { convertCsvFiles, csvFilesIn, datasetNameForCsv } from "./csvToParquet.js";
 import { isValidDatasetName, referencePathFor } from "./datasets.js";
 import { quoteIdent, quoteLiteral, summarizeColumns, type DatasetColumn } from "./duckdb.js";
-import { CATALOG_DB_PATH, PARQUET_DATASETS_DIR } from "./paths.js";
-import { skillsDirectory } from "./skills.js";
+import { CATALOG_DB_PATH, DATA_CACHE_DIR } from "./paths.js";
 
 /**
  * `pnpm build-catalog`
  *
- * The one standard way a dataset enters this server: reads every `.parquet` file
- * under `skills/datasets/assets/` (small, committed examples) and, if set,
- * `$PARQUET_DATASETS_DIR` (the real, external Athena cache), builds them into tables
- * inside one persistent DuckDB database file, then regenerates each table's
- * `references/<name>.md` "## Fields" section from the live schema -- mechanically
- * derived, so it can never drift from what `inspect_dataset` shows at runtime -- while
- * preserving any hand-written `description` and other prose. The live MCP server never
- * touches raw parquet: it only ATTACHes the file this script produces, read-only.
+ * The one standard way a dataset enters this server: reads the local data cache
+ * (`$DATA_CACHE_DIR`, one subdirectory per source group), converts any `.csv` that has
+ * no parquet beside it yet, loads every `.parquet` into tables inside one persistent
+ * DuckDB database file, then regenerates each table's `references/<name>.md` "## Fields"
+ * section from the live schema -- mechanically derived, so it can never drift from what
+ * `inspect_dataset` shows at runtime -- while preserving any hand-written `description`
+ * and other prose.
+ *
+ * This is a rebuild step, not first-run setup. The live MCP server never reads the cache
+ * at all -- it only ATTACHes the database file this script produces, read-only -- so a
+ * machine that has the database but no cache is perfectly fine, and running this there
+ * is a no-op that leaves the existing database alone.
  */
 
-const ASSETS_DIR = join(skillsDirectory, DATASETS_SKILL_NAME, "assets");
 const FIELDS_HEADING = "## Fields";
 
 function parquetFilesIn(dir: string): Map<string, string> {
@@ -38,20 +41,73 @@ function parquetFilesIn(dir: string): Map<string, string> {
   return found;
 }
 
-/** Discover source parquet files, name = filename stem, validated and collision-checked. */
-function discoverSources(): Map<string, string> {
-  const shipped = parquetFilesIn(ASSETS_DIR);
-  const external = PARQUET_DATASETS_DIR ? parquetFilesIn(PARQUET_DATASETS_DIR) : new Map<string, string>();
+/** The cache's source groups -- one subdirectory per origin (`sf-open-data/`,
+ *  `mock-sales-data/`, ...). A loose file at the cache root is ignored: a dataset
+ *  belongs to a group. A missing cache root yields no groups rather than throwing. */
+function groupDirsIn(root: string): string[] {
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(root, entry.name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
 
-  const collisions = [...shipped.keys()].filter((name) => external.has(name));
+/**
+ * Convert any `.csv` in a group directory that has no parquet beside it yet, so the
+ * rest of the build sees one uniform parquet shape. Idempotent, which matters because
+ * these files can be large -- a CSV already converted is left alone. A conversion that
+ * fails is fatal rather than skipped: silently dropping a dataset here would resurface
+ * later as a confusing "reference doc has no matching table" error.
+ */
+async function convertPendingCsv(groupDirs: string[]): Promise<void> {
+  const jobs = groupDirs.flatMap((dir) =>
+    csvFilesIn(dir)
+      .map((entry) => {
+        const name = datasetNameForCsv(entry);
+        return {
+          csvPath: join(dir, entry),
+          parquetPath: join(dir, `${name}${DATASET_PARQUET_EXTENSION}`),
+          name,
+        };
+      })
+      .filter((job) => !existsSync(job.parquetPath))
+  );
+  if (jobs.length === 0) return;
+
+  const { converted, failed } = await convertCsvFiles(jobs);
+  for (const { csvPath, parquetPath } of converted) {
+    console.log(`converted ${csvPath} -> ${parquetPath}`);
+  }
+  if (failed.length > 0) {
+    throw new Error(
+      `Could not convert ${failed.length} CSV file(s):\n` +
+        failed.map(({ csvPath, error }) => `  ${csvPath}: ${error}`).join("\n")
+    );
+  }
+}
+
+/** Discover source parquet files across every group, name = filename stem, validated
+ *  and collision-checked. Groups organise the cache by origin; they do not namespace
+ *  the dataset, so the same stem in two groups is ambiguous and refused. */
+function discoverSources(groupDirs: string[]): Map<string, string> {
+  const all = new Map<string, string>();
+  const collisions: string[] = [];
+  for (const dir of groupDirs) {
+    for (const [name, path] of parquetFilesIn(dir)) {
+      if (all.has(name)) collisions.push(name);
+      else all.set(name, path);
+    }
+  }
   if (collisions.length) {
     throw new Error(
-      `Dataset name(s) ${collisions.join(", ")} exist as a parquet file in both ` +
-        `skills/datasets/assets/ and $PARQUET_DATASETS_DIR -- rename one.`
+      `Dataset name(s) ${collisions.join(", ")} exist as a parquet file in more than one ` +
+        `group under ${DATA_CACHE_DIR} -- rename one.`
     );
   }
 
-  const all = new Map([...shipped, ...external]);
   const invalid = [...all.keys()].filter((name) => !isValidDatasetName(name));
   if (invalid.length) {
     throw new Error(
@@ -155,12 +211,15 @@ function queryVia(instance: DuckDBInstance): (sql: string) => Promise<{ rows: Ar
 }
 
 async function main(): Promise<void> {
-  const sources = discoverSources();
+  const groupDirs = groupDirsIn(DATA_CACHE_DIR);
+  await convertPendingCsv(groupDirs);
+
+  const sources = discoverSources(groupDirs);
   if (sources.size === 0) {
     console.log(
-      "No .parquet files found under skills/datasets/assets/" +
-        (PARQUET_DATASETS_DIR ? ` or $PARQUET_DATASETS_DIR (${PARQUET_DATASETS_DIR})` : "") +
-        ". Nothing to build."
+      `No datasets found under ${DATA_CACHE_DIR} -- expected one subdirectory per ` +
+        `source group, each holding .parquet or .csv files. Nothing to build, and any ` +
+        `existing catalog database is left exactly as it was.`
     );
     return;
   }

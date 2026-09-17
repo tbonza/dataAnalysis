@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import {
-  ASSETS_DIRNAME,
-  DATASET_PARQUET_EXTENSION,
-  REFERENCES_DIRNAME,
-} from "./constants.js";
+import { REFERENCES_DIRNAME } from "./constants.js";
 import { buildCatalog, datasetsSkill, isValidDatasetName } from "./datasets.js";
 import { buildPromptLibrary, jobRoles, promptNameFor } from "./prompts.js";
 import {
@@ -145,22 +141,19 @@ describe("datasets and job-roles", () => {
   const rolesSkillObj = jobRoles(skills);
   const WHEN_TO_USE = /\bUse (when|before|whenever)\b/i;
 
-  const assetsDir = join(skillsDirectory, "datasets", ASSETS_DIRNAME);
   const referencesDir = join(skillsDirectory, "datasets", REFERENCES_DIRNAME);
-  const assetNames = existsSync(assetsDir)
-    ? readdirSync(assetsDir)
-        .filter((f) => f.endsWith(DATASET_PARQUET_EXTENSION))
-        .map((f) => f.slice(0, -DATASET_PARQUET_EXTENSION.length))
-    : [];
   const referenceNames = existsSync(referencesDir)
     ? readdirSync(referencesDir)
         .filter((f) => f.endsWith(".md"))
         .map((f) => f.slice(0, -".md".length))
     : [];
 
-  it("has at least one packaged dataset", () => {
+  it("has at least one documented dataset", () => {
     assert.ok(datasetsSkillObj, "the datasets skill did not load");
-    assert.ok(assetNames.length > 0, "no dataset assets found under skills/datasets/assets/");
+    assert.ok(
+      referenceNames.length > 0,
+      "no dataset reference docs found under skills/datasets/references/"
+    );
   });
 
   it("has at least one job role", () => {
@@ -171,36 +164,18 @@ describe("datasets and job-roles", () => {
     );
   });
 
-  it("every shipped dataset asset has a matching reference doc", () => {
-    const referenceSet = new Set(referenceNames);
-    for (const name of assetNames) {
-      assert.ok(
-        referenceSet.has(name),
-        `dataset asset "${name}${DATASET_PARQUET_EXTENSION}" has no matching references/${name}.md`
-      );
-    }
-  });
-
   it("every dataset reference doc names a real table in the catalog", async () => {
-    // A reference doc's table may be sourced from $PARQUET_DATASETS_DIR rather than the
-    // shipped assets/ directory, so the reverse of the check above can't be a plain
-    // filesystem comparison. buildCatalog() is the live-catalog-based cross-check (via
-    // listCatalogTableNames()) that correctly spans both source directories, and throws
-    // naming any doc with no matching table (or any table with no matching doc).
+    // The skill holds no data at all -- the parquet behind a table lives in the cache,
+    // which may not even be on this machine. buildCatalog() is therefore the only
+    // cross-check that can pair docs with tables: it reads the built database via
+    // listCatalogTableNames() and throws naming any doc with no matching table (or any
+    // table with no matching doc).
     await assert.doesNotReject(() => buildCatalog(datasetsSkillObj));
   });
 
   it("every dataset name is a valid, spec-legal slug", () => {
-    for (const name of assetNames) {
+    for (const name of referenceNames) {
       assert.ok(isValidDatasetName(name), `dataset name "${name}" is not a valid slug`);
-    }
-  });
-
-  it("every dataset asset is a non-empty parquet file", () => {
-    for (const name of assetNames) {
-      const file = `${name}${DATASET_PARQUET_EXTENSION}`;
-      const { size } = statSync(join(assetsDir, file));
-      assert.ok(size > 0, `${file} is empty`);
     }
   });
 

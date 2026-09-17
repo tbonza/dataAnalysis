@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { quoteLiteral } from "./duckdb.js";
@@ -15,10 +15,17 @@ import { quoteLiteral } from "./duckdb.js";
 
 const CSV_EXTENSION = ".csv";
 
-function csvFilesIn(dir: string): string[] {
-  return readdirSync(dir).filter(
-    (entry) => entry.endsWith(CSV_EXTENSION) && !entry.startsWith("._")
-  );
+/** Every `.csv` directly in `dir` (non-recursive, macOS `._*` AppleDouble files
+ *  skipped). A missing directory yields none rather than throwing, so a caller can
+ *  probe a cache group directory that may not exist. */
+export function csvFilesIn(dir: string): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries.filter((entry) => entry.endsWith(CSV_EXTENSION) && !entry.startsWith("._"));
 }
 
 /** Mechanical, not dataset-name-aware: lowercase, non-alphanumeric runs collapsed to a
@@ -33,6 +40,12 @@ function slugify(stem: string): string {
   return slug.length > 0 ? slug : "dataset";
 }
 
+/** The dataset name a CSV file converts into. Exported so `build-catalog` can tell
+ *  whether a CSV has already been converted without redoing the work. */
+export function datasetNameForCsv(entry: string): string {
+  return slugify(basename(entry, extname(entry)));
+}
+
 export interface ConvertedFile {
   csvPath: string;
   parquetPath: string;
@@ -45,13 +58,55 @@ export interface FailedFile {
 }
 
 /**
- * Convert every `.csv` file directly in `inputDir` (non-recursive, macOS `._*`
- * AppleDouble files skipped) into a same-named `.parquet` file in `outputDir`.
+ * Convert each given CSV to its given parquet path, sharing one DuckDB instance.
  * `sample_size=-1` forces DuckDB to scan the whole file for type inference rather than
  * its default row sample -- a sampled guess risks a type mismatch partway through the
  * real COPY on a large file. One bad file is reported and skipped rather than aborting
- * the whole batch; a name collision between two inputs is a hard error up front, since
- * silently overwriting one file's output with another's would be worse than failing.
+ * the whole batch.
+ *
+ * `build-catalog` calls this directly so it can convert only the CSVs that don't
+ * already have a parquet beside them; `convertCsvDirectory` is the whole-directory
+ * wrapper the CLI uses.
+ */
+export async function convertCsvFiles(
+  jobs: ConvertedFile[]
+): Promise<{ converted: ConvertedFile[]; failed: FailedFile[] }> {
+  const converted: ConvertedFile[] = [];
+  const failed: FailedFile[] = [];
+  if (jobs.length === 0) return { converted, failed };
+
+  const instance = await DuckDBInstance.create(":memory:");
+  try {
+    for (const job of jobs) {
+      mkdirSync(dirname(job.parquetPath), { recursive: true });
+      const conn = await instance.connect();
+      try {
+        await conn.run(
+          `COPY (SELECT * FROM read_csv_auto(${quoteLiteral(job.csvPath)}, sample_size=-1)) ` +
+            `TO ${quoteLiteral(job.parquetPath)} (FORMAT PARQUET)`
+        );
+        converted.push(job);
+      } catch (err) {
+        failed.push({
+          csvPath: job.csvPath,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        conn.disconnectSync();
+      }
+    }
+  } finally {
+    instance.closeSync();
+  }
+
+  return { converted, failed };
+}
+
+/**
+ * Convert every `.csv` file directly in `inputDir` (non-recursive, macOS `._*`
+ * AppleDouble files skipped) into a same-named `.parquet` file in `outputDir`. A name
+ * collision between two inputs is a hard error up front, since silently overwriting one
+ * file's output with another's would be worse than failing.
  */
 export async function convertCsvDirectory(
   inputDir: string,
@@ -64,7 +119,7 @@ export async function convertCsvDirectory(
 
   const nameOf = new Map<string, string>();
   for (const entry of entries) {
-    const slug = slugify(basename(entry, extname(entry)));
+    const slug = datasetNameForCsv(entry);
     const existing = nameOf.get(slug);
     if (existing) {
       throw new Error(
@@ -76,32 +131,16 @@ export async function convertCsvDirectory(
 
   mkdirSync(outputDir, { recursive: true });
 
-  const instance = await DuckDBInstance.create(":memory:");
-  const converted: ConvertedFile[] = [];
-  const failed: FailedFile[] = [];
-  try {
-    for (const entry of entries) {
-      const csvPath = join(inputDir, entry);
-      const name = slugify(basename(entry, extname(entry)));
-      const parquetPath = join(outputDir, `${name}.parquet`);
-      const conn = await instance.connect();
-      try {
-        await conn.run(
-          `COPY (SELECT * FROM read_csv_auto(${quoteLiteral(csvPath)}, sample_size=-1)) ` +
-            `TO ${quoteLiteral(parquetPath)} (FORMAT PARQUET)`
-        );
-        converted.push({ csvPath, parquetPath, name });
-      } catch (err) {
-        failed.push({ csvPath, error: err instanceof Error ? err.message : String(err) });
-      } finally {
-        conn.disconnectSync();
-      }
-    }
-  } finally {
-    instance.closeSync();
-  }
-
-  return { converted, failed };
+  return convertCsvFiles(
+    entries.map((entry) => {
+      const name = datasetNameForCsv(entry);
+      return {
+        csvPath: join(inputDir, entry),
+        parquetPath: join(outputDir, `${name}.parquet`),
+        name,
+      };
+    })
+  );
 }
 
 async function main(): Promise<void> {

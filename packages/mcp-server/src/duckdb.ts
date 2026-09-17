@@ -80,8 +80,8 @@ function getEngine(): Promise<DuckDBInstance> {
 
       if (!existsSync(CATALOG_DB_PATH)) {
         throw new Error(
-          `No catalog database at ${CATALOG_DB_PATH}. Run "pnpm build-catalog" first -- it builds this ` +
-            `file from the parquet files under skills/datasets/assets/ (and $PARQUET_DATASETS_DIR, if set).`
+          `No catalog database at ${CATALOG_DB_PATH}. Unpack the data archive, which ships this ` +
+            `file, or run "pnpm build-catalog" to build one from the datasets in $DATA_CACHE_DIR.`
         );
       }
       await conn.run(

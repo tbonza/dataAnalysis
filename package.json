@@ -4,6 +4,9 @@
   "description": "MCP data-analysis and chart tool, a deep-agent server that consumes it, and a chat client",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
