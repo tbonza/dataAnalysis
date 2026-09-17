@@ -64,8 +64,10 @@ http://127.0.0.1:3000/health` lists the loaded skills, the packaged datasets, an
 executive prompt library's names.
 
 There is also a packaged-data path, so a caller never has to type rows in:
-`list_available_datasets` returns the catalog (today, one dataset — `regional-sales`),
-and `load_available_dataset({ name })` mints a `datasetId` exactly like `load_data`
+`list_available_datasets` returns the catalog — `regional-sales` ships with the
+package; more appear automatically if `example_data/parquet` (built via `pnpm
+csv-to-parquet`) exists locally, see [Adding a dataset](#adding-a-dataset) — and
+`load_available_dataset({ name })` mints a `datasetId` exactly like `load_data`
 does. From there `inspect_dataset` → `query` → `create_chart` work identically
 regardless of where the data came from.
 
@@ -255,8 +257,12 @@ locations feed the same build step:
   examples, **committed and published** (`package.json`'s `files` list includes
   `skills/`). This is where `regional-sales` lives.
 - `$PARQUET_DATASETS_DIR/<name>.parquet` — real, external data (e.g. an Athena
-  export cached to local disk), **not committed**. Unset ⇒ only the shipped examples
-  are built.
+  export cached to local disk), **not committed**. Defaults to this repo's own
+  `example_data/parquet` (populated by `pnpm csv-to-parquet` from
+  `example_data/sf-open-data/*.csv`, itself gitignored) so a bare `pnpm build-catalog`
+  picks up whatever's there with no env var needed; a missing directory just means the
+  shipped examples are built alone, same as before. Override the variable to point at
+  a different external cache instead.
 
 One command builds (or rebuilds, from scratch) the catalog from whatever's in both
 locations, and regenerates each dataset's `references/<name>.md`:
@@ -300,7 +306,7 @@ prompt name.
 
 ```bash
 pnpm build-catalog   # the mcp-server suite attaches the catalog database, so build it first
-pnpm test            # 135 tests across two suites; needs no credentials
+pnpm test            # 191 tests across four packages' suites; needs no credentials
 pnpm typecheck       # all four packages
 ```
 
@@ -330,8 +336,8 @@ rather than an error.
 | `AWS_REGION` | `us-east-1` | agent-server |
 | `MCP_ALLOWED_HOSTS` | localhost only | mcp-server (DNS-rebinding guard) |
 | `MCP_ALLOWED_ORIGINS` | localhost only | mcp-server (DNS-rebinding guard) |
-| `PARQUET_DATASETS_DIR` | *(unset — only shipped examples build)* | mcp-server, `pnpm build-catalog` |
-| `DATASET_CATALOG_DB_PATH` | `packages/mcp-server/data/catalog.duckdb` | mcp-server, `pnpm build-catalog` |
+| `PARQUET_DATASETS_DIR` | `example_data/parquet` (falls back to shipped examples alone if missing) | mcp-server, `pnpm build-catalog` |
+| `DATASET_CATALOG_DB_PATH` | `packages/mcp-server/data/catalog.db` | mcp-server, `pnpm build-catalog` |
 | `DEMO_HOST` | `127.0.0.1` | demo — what the one port binds (`--host`) |
 | `DEMO_PORT` | `8080` | demo (`--port`) |
 | `DEMO_ALLOWED_HOSTS` | *(unset)* | demo — hostnames allowed to reach it, comma-separated (`--allowed-host`) |
@@ -380,7 +386,9 @@ SVG, or a slide.
   that with the query grammar. Clustering, forecasting and custom statistics are
   therefore unsupported, and the `data-query` skill says so rather than letting an agent
   discover it.
-- **No joins.** One dataset per query; chaining covers multi-step aggregation.
+- **No joins on a shared key.** One dataset per query; chaining covers multi-step
+  aggregation. The one exception is `spatialJoin`, which pairs rows from two datasets
+  by coordinate proximity rather than a common column — see the `data-query` skill.
 - **No caller-supplied file or URL ingestion.** `load_data` takes inline rows only. The
   packaged-dataset tools never read a caller-supplied path, or even a raw parquet file
   at request time — `load_available_dataset`'s `name` is a closed enum built from the

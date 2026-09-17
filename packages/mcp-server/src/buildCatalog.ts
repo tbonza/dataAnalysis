@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { DATASET_PARQUET_EXTENSION, DATASETS_SKILL_NAME, PARQUET_DATASETS_DIR } from "./constants.js";
+import { DATASET_PARQUET_EXTENSION, DATASETS_SKILL_NAME } from "./constants.js";
 import { isValidDatasetName, referencePathFor } from "./datasets.js";
 import { quoteIdent, quoteLiteral, summarizeColumns, type DatasetColumn } from "./duckdb.js";
-import { CATALOG_DB_PATH } from "./paths.js";
+import { CATALOG_DB_PATH, PARQUET_DATASETS_DIR } from "./paths.js";
 import { skillsDirectory } from "./skills.js";
 
 /**

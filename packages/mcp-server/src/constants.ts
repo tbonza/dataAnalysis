@@ -128,8 +128,10 @@ export const DATASET_PARQUET_EXTENSION = ".parquet";
 
 /** External directory of cached Athena parquet exports, one file = one dataset,
  *  merged with the committed examples under `skills/datasets/assets/` when
- *  `pnpm build-catalog` runs. Unset ⇒ only the committed examples are built. Never
- *  read directly by the live server — only `buildCatalog.ts` touches raw parquet. */
+ *  `pnpm build-catalog` runs. Bare env read only — the default (this repo's own
+ *  `example_data/parquet`) is resolved in paths.ts, the same way it resolves
+ *  DATASET_CATALOG_DB_PATH just below. Never read directly by the live server — only
+ *  `buildCatalog.ts` touches raw parquet. */
 export const PARQUET_DATASETS_DIR = process.env["PARQUET_DATASETS_DIR"];
 
 /** Where `pnpm build-catalog` writes the prebuilt catalog database, and where the
