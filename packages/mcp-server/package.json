@@ -9,6 +9,7 @@
     "start": "tsx src/server.ts",
     "cli": "tsx src/cli.ts",
     "build-catalog": "tsx src/buildCatalog.ts",
+    "csv-to-parquet": "tsx src/csvToParquet.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts"
   },

@@ -11,7 +11,8 @@
     "agent": "pnpm --filter agent-server start",
     "web": "pnpm --filter web-client dev",
     "demo": "pnpm --filter demo start",
-    "build-catalog": "pnpm --filter mcp-server build-catalog"
+    "build-catalog": "pnpm --filter mcp-server build-catalog",
+    "csv-to-parquet": "pnpm --filter mcp-server csv-to-parquet"
   },
   "keywords": [],
   "author": "",

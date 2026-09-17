@@ -171,8 +171,7 @@ describe("datasets and job-roles", () => {
     );
   });
 
-  it("pairs every dataset asset with a reference doc, and vice versa", () => {
-    const assetSet = new Set(assetNames);
+  it("every shipped dataset asset has a matching reference doc", () => {
     const referenceSet = new Set(referenceNames);
     for (const name of assetNames) {
       assert.ok(
@@ -180,12 +179,15 @@ describe("datasets and job-roles", () => {
         `dataset asset "${name}${DATASET_PARQUET_EXTENSION}" has no matching references/${name}.md`
       );
     }
-    for (const name of referenceNames) {
-      assert.ok(
-        assetSet.has(name),
-        `dataset reference "${name}.md" has no matching assets/${name}${DATASET_PARQUET_EXTENSION}`
-      );
-    }
+  });
+
+  it("every dataset reference doc names a real table in the catalog", async () => {
+    // A reference doc's table may be sourced from $PARQUET_DATASETS_DIR rather than the
+    // shipped assets/ directory, so the reverse of the check above can't be a plain
+    // filesystem comparison. buildCatalog() is the live-catalog-based cross-check (via
+    // listCatalogTableNames()) that correctly spans both source directories, and throws
+    // naming any doc with no matching table (or any table with no matching doc).
+    await assert.doesNotReject(() => buildCatalog(datasetsSkillObj));
   });
 
   it("every dataset name is a valid, spec-legal slug", () => {
