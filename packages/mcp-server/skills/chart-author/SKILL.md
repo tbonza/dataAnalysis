@@ -59,9 +59,12 @@ don't pick one for novelty.
 returns the machine-readable catalog with each type's channels.
 
 Short names work: `bar`, `line`, `scatter`, `pie`, `heatmap`, `histogram`, `boxplot`,
-`area`, `regression`, `grouped_bar`, `lollipop`, `waterfall`, `candlestick`,
-`world_map`, `us_map`. An unrecognised name silently becomes a scatter plot, so check
-the returned `chartType` if you used something unusual.
+`area`, `regression`, `grouped_bar`, `lollipop`, `waterfall`, `candlestick`, `map`,
+`choropleth`. An unrecognised name silently becomes a scatter plot, so check the
+returned `chartType` if you used something unusual.
+
+Putting data on a map has its own constraints — and a city-scale map needs a second,
+non-obvious step. Read [references/maps.md](references/maps.md) before authoring one.
 
 ## Step 2 — map fields to channels
 

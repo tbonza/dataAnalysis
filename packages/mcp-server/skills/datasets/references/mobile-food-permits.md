@@ -47,3 +47,36 @@ Vendor counts by `FacilityType` (Push Cart vs. Truck) or `Status`, what a vendor
 approval/expiration timelines (`Approved`, `Received`, `ExpirationDate`). There is no
 sales, revenue, or inspection-score data, so questions about a vendor's business
 performance or health-code history are out of scope.
+
+## Joining with other datasets
+
+This dataset has no neighborhood or supervisor-district column, so it cannot join on the
+categorical key that `film-locations` and `registered-businesses` share (see either of
+their reference docs). But `Latitude`/`Longitude` **are** a usable spatial key for most
+rows — 464 of 500 have a real geocode; the rest are `0` placeholders and should be
+filtered out (`Latitude != 0 AND Longitude != 0`) before any spatial use.
+
+**A proximity join with `film-locations` works through the `query` tool**, using its
+`spatialJoin` field on `Longitude`/`Latitude` — 1,817 film-shoot/food-truck-permit pairs
+fall within 150m of each other, the closest a couple of metres apart (same corner).
+Remember the `!= 0` filter, or the placeholder rows drag the result off the map:
+
+```json
+{
+  "spatialJoin": {
+    "datasetId": "<film-locations id>",
+    "lonColumn": "Longitude", "latColumn": "Latitude",
+    "otherLonColumn": "Longitude", "otherLatColumn": "Latitude",
+    "withinMeters": 150
+  },
+  "where": [{ "column": "Latitude", "operator": "!=", "value": 0 }]
+}
+```
+
+See the **data-query** skill's `references/spatial-join.md` for the full grammar.
+
+`registered-businesses` cannot be spatial-joined directly: it keeps its coordinates in a
+WKT `Business Location` string rather than numeric columns, and nothing here parses WKT.
+Matching by name (`Applicant` vs. its `Ownership Name`/`DBA Name`) is a much weaker
+option — naming conventions differ (LLC suffixes, abbreviations, punctuation) and would
+produce a low, misleading match rate.

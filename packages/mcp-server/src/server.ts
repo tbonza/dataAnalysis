@@ -349,7 +349,10 @@ async function main(): Promise<void> {
       },
       async ({ datasetId, spec }) => {
         const source = getDataset(datasetId);
-        const { sql } = compileQuery(source, spec);
+        // A spatialJoin names a second dataset. getDataset throws listing the loaded ids
+        // if it isn't there — the same repair path as an unknown primary datasetId.
+        const other = spec.spatialJoin ? getDataset(spec.spatialJoin.datasetId) : undefined;
+        const { sql } = compileQuery(source, spec, other);
         const { rows, columns } = await execSql(sql);
         if (rows.length === 0) {
           // An empty result is nearly always a filter mistake, and charting it produces

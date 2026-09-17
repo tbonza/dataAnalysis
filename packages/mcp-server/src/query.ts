@@ -21,13 +21,14 @@ import {
   not,
   parseTableRef,
   sql,
+  verbatim,
   add,
   sub,
   mul,
   div,
 } from "@uwdata/mosaic-sql";
-import { MAX_RESULT_ROWS } from "./constants.js";
-import { quoteIdent, type Dataset } from "./duckdb.js";
+import { MAX_RESULT_ROWS, MAX_SPATIAL_JOIN_PAIRS } from "./constants.js";
+import { quoteIdent, tableSql, type Dataset } from "./duckdb.js";
 
 /**
  * The operator allowlist is data-formulator's, ported verbatim from
@@ -85,6 +86,25 @@ const OrderBy = z.object({
   direction: z.enum(["asc", "desc"]).default("asc"),
 });
 
+/**
+ * Join a second dataset on geographic proximity. The only way to relate two
+ * datasets in one query — everything else here operates on a single table.
+ *
+ * The other dataset's columns arrive prefixed `other_`, and the pair's great-circle
+ * separation arrives as `distance_meters`; all three are ordinary columns to
+ * everything downstream, so select/where/groupBy/aggregate/orderBy work on them
+ * unchanged.
+ */
+const SpatialJoin = z.object({
+  /** The other loaded dataset. May be this same dataset, to find clusters within it. */
+  datasetId: z.string(),
+  lonColumn: z.string(),
+  latColumn: z.string(),
+  otherLonColumn: z.string(),
+  otherLatColumn: z.string(),
+  withinMeters: z.number().positive(),
+});
+
 export const QuerySpec = z.object({
   select: z.array(z.string()).optional(),
   compute: z.array(Compute).optional(),
@@ -93,6 +113,7 @@ export const QuerySpec = z.object({
   aggregate: z.array(Aggregate).optional(),
   orderBy: z.array(OrderBy).optional(),
   limit: z.number().int().positive().max(MAX_RESULT_ROWS).optional(),
+  spatialJoin: SpatialJoin.optional(),
 });
 
 export type QuerySpec = z.infer<typeof QuerySpec>;
@@ -227,6 +248,113 @@ function computeExpr(spec: z.infer<typeof Compute>, sourceColumns: readonly stri
   }
 }
 
+/** Mean Earth radius in metres — the sphere the Haversine formula assumes. */
+const EARTH_RADIUS_M = 6_371_000;
+
+/** Metres per degree of latitude. Near enough constant everywhere, which is what makes
+ *  the latitude prefilter below safe; the longitude equivalent is not, since a degree of
+ *  longitude shrinks by cos(latitude). */
+const METRES_PER_DEGREE_LAT = 111_320;
+
+/** Columns from the joined dataset arrive under this prefix. */
+const JOIN_COLUMN_PREFIX = "other_";
+
+/** The pair separation a spatial join always projects. */
+const DISTANCE_COLUMN = "distance_meters";
+
+/**
+ * Great-circle distance in metres between two lon/lat pairs, as a SQL expression.
+ *
+ * Haversine over core DuckDB maths rather than the `spatial` extension: the extension
+ * would cost an INSTALL step, network access to fetch it, and a LOAD ordered ahead of
+ * the engine's own lockdown — all to compute one distance. Assuming a sphere rather
+ * than an ellipsoid costs well under a metre at city scale.
+ */
+function haversineMetres(aLon: string, aLat: string, bLon: string, bLat: string): string {
+  return (
+    `2 * ${EARTH_RADIUS_M} * asin(sqrt(` +
+    `pow(sin(radians(${bLat} - ${aLat}) / 2), 2) + ` +
+    `cos(radians(${aLat})) * cos(radians(${bLat})) * ` +
+    `pow(sin(radians(${bLon} - ${aLon}) / 2), 2)` +
+    `))`
+  );
+}
+
+/**
+ * Build the joined row set a `spatialJoin` queries over, as a subquery.
+ *
+ * Returned as a FROM source rather than a bespoke query shape so that everything
+ * downstream — select, where, groupBy, aggregate, orderBy, and even `compute`'s own
+ * wrapping subquery — operates on it unchanged. mosaic-sql has no join builder, but it
+ * accepts a verbatim fragment as a table source, which is all this needs.
+ */
+function spatialJoinFrom(
+  dataset: Dataset,
+  other: Dataset,
+  join: z.infer<typeof SpatialJoin>
+): { from: ReturnType<typeof verbatim>; columns: string[] } {
+  const sourceColumns = dataset.columns.map((c) => c.name);
+  const otherColumns = other.columns.map((c) => c.name);
+
+  const require = (where: string, column: string, available: readonly string[]) => {
+    if (!available.includes(column)) unknownColumn(where, column, available);
+  };
+  require("spatialJoin.lonColumn", join.lonColumn, sourceColumns);
+  require("spatialJoin.latColumn", join.latColumn, sourceColumns);
+  require("spatialJoin.otherLonColumn", join.otherLonColumn, otherColumns);
+  require("spatialJoin.otherLatColumn", join.otherLatColumn, otherColumns);
+
+  const pairs = dataset.rowCount * other.rowCount;
+  if (pairs > MAX_SPATIAL_JOIN_PAIRS) {
+    throw new Error(
+      `A spatial join of ${dataset.rowCount.toLocaleString()} x ${other.rowCount.toLocaleString()} rows is ` +
+        `${pairs.toLocaleString()} pair comparisons, past the ${MAX_SPATIAL_JOIN_PAIRS.toLocaleString()} ceiling. ` +
+        `Narrow one side with a query first — filter or aggregate it — then spatial-join that result.`
+    );
+  }
+
+  const prefixed = otherColumns.map((name) => `${JOIN_COLUMN_PREFIX}${name}`);
+  const taken = new Set(sourceColumns);
+  const collisions = [...prefixed, DISTANCE_COLUMN].filter((name) => taken.has(name));
+  if (collisions.length > 0) {
+    throw new Error(
+      `spatialJoin would produce ${collisions.map((c) => `"${c}"`).join(", ")}, which ` +
+        `${collisions.length === 1 ? "collides" : "collide"} with a column already on this dataset. ` +
+        `Select a narrower set of columns with a query first, then spatial-join that result.`
+    );
+  }
+
+  const a = "spatial_left";
+  const b = "spatial_right";
+  const aLon = `${a}.${quoteIdent(join.lonColumn)}`;
+  const aLat = `${a}.${quoteIdent(join.latColumn)}`;
+  const bLon = `${b}.${quoteIdent(join.otherLonColumn)}`;
+  const bLat = `${b}.${quoteIdent(join.otherLatColumn)}`;
+  const distance = haversineMetres(aLon, aLat, bLon, bLat);
+
+  const projection = [
+    ...sourceColumns.map((name) => `${a}.${quoteIdent(name)}`),
+    ...otherColumns.map(
+      (name) => `${b}.${quoteIdent(name)} AS ${quoteIdent(`${JOIN_COLUMN_PREFIX}${name}`)}`
+    ),
+    `${distance} AS ${quoteIdent(DISTANCE_COLUMN)}`,
+  ].join(", ");
+
+  // The latitude band prunes nearly every pair before the trigonometry runs. It is
+  // deliberately the only prefilter: a fixed longitude band would be wrong, because a
+  // degree of longitude covers less ground the further you are from the equator, so a
+  // band wide enough at the equator silently drops true matches anywhere else.
+  const latBand = join.withinMeters / METRES_PER_DEGREE_LAT;
+
+  const text =
+    `(SELECT ${projection} ` +
+    `FROM ${tableSql(dataset.table)} AS ${a} ` +
+    `JOIN ${tableSql(other.table)} AS ${b} ` +
+    `ON abs(${aLat} - ${bLat}) <= ${latBand} AND ${distance} <= ${join.withinMeters})`;
+
+  return { from: verbatim(text), columns: [...sourceColumns, ...prefixed, DISTANCE_COLUMN] };
+}
+
 /**
  * Turn a validated QuerySpec into SQL against one dataset.
  *
@@ -238,8 +366,23 @@ function computeExpr(spec: z.infer<typeof Compute>, sourceColumns: readonly stri
  * over this one's result; each result registers as its own dataset for that
  * purpose.
  */
-export function compileQuery(dataset: Dataset, spec: QuerySpec): CompiledQuery {
-  const sourceColumns = dataset.columns.map((c) => c.name);
+export function compileQuery(
+  dataset: Dataset,
+  spec: QuerySpec,
+  /** The dataset named by `spec.spatialJoin`, resolved by the caller. */
+  otherDataset?: Dataset
+): CompiledQuery {
+  let joined: { from: ReturnType<typeof verbatim>; columns: string[] } | undefined;
+  if (spec.spatialJoin) {
+    if (!otherDataset) {
+      throw new Error(
+        `spatialJoin names dataset "${spec.spatialJoin.datasetId}", which was not resolved.`
+      );
+    }
+    joined = spatialJoinFrom(dataset, otherDataset, spec.spatialJoin);
+  }
+
+  const sourceColumns = joined ? joined.columns : dataset.columns.map((c) => c.name);
 
   const computed = spec.compute ?? [];
   for (const c of computed) {
@@ -259,12 +402,16 @@ export function compileQuery(dataset: Dataset, spec: QuerySpec): CompiledQuery {
   // dataset.table may be dot-qualified (e.g. "catalog.regional_sales" for a packaged
   // dataset); parseTableRef splits on "." itself, so it handles both that and a bare
   // ephemeral table name identically.
+  // A spatial join supplies its own joined row set as the source; otherwise it's the
+  // dataset's own table. Either way `compute` wraps it the same.
+  const base = joined ? joined.from : parseTableRef(dataset.table);
+
   const from = computed.length
-    ? Query.from(parseTableRef(dataset.table)).select(
+    ? Query.from(base).select(
         "*",
         Object.fromEntries(computed.map((c) => [c.as, computeExpr(c, sourceColumns)]))
       )
-    : parseTableRef(dataset.table);
+    : base;
 
   const query = Query.from(from);
 

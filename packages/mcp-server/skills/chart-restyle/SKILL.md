@@ -23,7 +23,9 @@ place you work at the Vega-Lite level rather than the chart-spec level — and o
 
 **Yes** — colours, colour schemes, axis formats and labels, label angles, legend
 position, gridlines, fonts, opacity, corner radius, titles, annotations, reference
-lines, sort order, layout polish.
+lines, sort order, layout polish. Also **zooming a map to a city**, which cannot be done
+when the chart is created and always lands here — see
+[references/map-projections.md](references/map-projections.md).
 
 **No** — a different field, a different filter, a different aggregation, a different
 chart type. Those change what is measured, so go back to `query` and `create_chart`.

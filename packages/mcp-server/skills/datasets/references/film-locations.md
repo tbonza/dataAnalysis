@@ -42,3 +42,30 @@ District` shows up most), the most-filmed specific locations, productions by
 There is no box office, budget, genre, or runtime data, so questions about a film's
 commercial performance or content are out of scope — this dataset only knows *where* and
 *when* it was shot.
+
+## Joining with other datasets
+
+There is no MCP tool for a row-level join between two datasets — `query` always compiles
+against exactly one table. The way to combine datasets here is: run a matching `groupBy`
+aggregate against each one separately (same grouping key on both sides), merge the two
+small result sets by hand, and reload the merged rows with `load_data` to get one
+queryable/chartable table. This only works at the aggregate level (a few dozen rows) —
+there is no natural per-row relationship between a specific film shoot and a specific
+business registration or food-truck permit.
+
+- **`registered-businesses` joins cleanly.** Verified by comparing the full distinct
+  value lists (not the sampled ones above) from both tables: `Analysis Neighborhood`
+  here and `Neighborhoods - Analysis Boundaries` there use byte-identical strings, and
+  `Supervisor District` (1-11) matches exactly too. The only difference is
+  `registered-businesses` also has "Visitacion Valley" — real (it has businesses but no
+  recorded film shoots there), not a naming mismatch — and both carry a NULL/unassigned
+  group.
+- **`mobile-food-permits` has no categorical join key** (no neighborhood or
+  supervisor-district column), but **a proximity join works** on `Longitude`/`Latitude`
+  via `query`'s `spatialJoin` field: 1,817 film-shoot/food-truck-permit pairs fall within
+  150m of each other, the closest a couple of metres apart. Filter out that dataset's `0`
+  placeholder coordinates (`other_Latitude != 0`) — 464 of its 500 rows have a usable
+  geocode. Keep `Longitude`/`Latitude` in the `groupBy` if you intend to map the result.
+  See the **data-query** skill's `references/spatial-join.md`.
+- **`regional-sales` does not join with either SF dataset** — a different, unrelated
+  domain (abstract regions and products), no shared key.

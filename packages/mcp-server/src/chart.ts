@@ -30,13 +30,18 @@ const CHART_TYPE_ALIASES: Record<string, string> = {
   lollipop: "Lollipop Chart",
   waterfall: "Waterfall Chart",
   candlestick: "Candlestick Chart",
-  world_map: "World Map",
-  us_map: "US Map",
+  // flint has one bubble-map template, `Map`; whether it draws the US or the world is
+  // its `region` property, not a separate template. These four used to point at
+  // "World Map"/"US Map", which no template has ever been called.
+  map: "Map",
+  world_map: "Map",
+  us_map: "Map",
+  choropleth: "Choropleth",
   // Legacy aliases, kept for the same reason upstream keeps them.
   point: "Scatter Plot",
   group_bar: "Grouped Bar Chart",
-  worldmap: "World Map",
-  usmap: "US Map",
+  worldmap: "Map",
+  usmap: "Map",
 };
 
 /**
@@ -47,7 +52,10 @@ const CHART_TYPE_ALIASES: Record<string, string> = {
 export function resolveChartType(raw: string | undefined): string {
   if (!raw) return FALLBACK_CHART_TYPE;
   const alias = CHART_TYPE_ALIASES[raw] ?? CHART_TYPE_ALIASES[raw.toLowerCase()];
-  if (alias) return alias;
+  // An alias is only worth following if it names a template flint actually has. Four of
+  // these once pointed at templates that never existed, and because the alias was
+  // returned unchecked, every call using them failed downstream instead of falling back.
+  if (alias && vlGetTemplateDef(alias)) return alias;
   if (vlGetTemplateDef(raw)) return raw;
   return FALLBACK_CHART_TYPE;
 }

@@ -21,6 +21,10 @@ the loop; two others hold the detail:
 - **data-query** — the query grammar for filtering, grouping, aggregating and deriving.
 - **chart-author** — choosing a chart type and mapping fields to channels.
 
+A question about *where* — what is near what, where things cluster — runs through four
+steps across four skills, one of which is easy to miss until the map comes out wrong.
+Read [references/geospatial.md](references/geospatial.md) before starting one.
+
 Read the one you need when you need it, not up front.
 
 ## The loop

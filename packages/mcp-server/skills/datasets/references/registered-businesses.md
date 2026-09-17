@@ -57,3 +57,35 @@ closed (a null `Business End Date` means still active); and longevity (`Business
 Date` to `Business End Date`). There is no revenue, employee-count, or business-outcome
 data, and with no deduplication, "how many businesses" answers are registration counts,
 not a guaranteed count of distinct real-world businesses.
+
+## Joining with other datasets
+
+There is no MCP tool for a row-level join between two datasets — `query` always compiles
+against exactly one table. The way to combine datasets here is: run a matching `groupBy`
+aggregate against each one separately (same grouping key on both sides), merge the two
+small result sets by hand, and reload the merged rows with `load_data` to get one
+queryable/chartable table. This only works at the aggregate level (a few dozen rows) —
+there is no natural per-row relationship between a specific business registration and a
+specific film shoot or food-truck permit.
+
+- **`film-locations` joins cleanly.** Verified by comparing the full distinct value
+  lists (not the sampled ones above) from both tables: `Neighborhoods - Analysis
+  Boundaries` here and `Analysis Neighborhood` there use byte-identical strings, and
+  `Supervisor District` (1-11) matches exactly too. The only difference is this dataset
+  also has "Visitacion Valley" — real (it has businesses but no recorded film shoots
+  there), not a naming mismatch — and both carry a NULL/unassigned group. (I used this
+  join to find that Financial District/South Beach has by far the lowest
+  businesses-per-film-location ratio of any district — filming there is disproportionate
+  to the business population, not just higher in absolute count.)
+- **`mobile-food-permits` has no categorical join key**, and this dataset cannot reach it
+  spatially either: `query`'s `spatialJoin` needs numeric longitude and latitude columns,
+  and this dataset's coordinates live inside the WKT string `Business Location`
+  (`POINT (-122.39 37.78)`), which nothing here parses. Matching on business/vendor name
+  (`Ownership Name`/`DBA Name` vs. `Applicant`) is a weak substitute — naming conventions
+  differ (LLC suffixes, abbreviations, punctuation) and would produce a low, misleading
+  match rate rather than a clean join.
+- **Note on size for any future spatial work**: at 366,909 rows this dataset is past the
+  50M pair-comparison ceiling `spatialJoin` enforces against anything but a small table.
+  Filter or aggregate it down with an ordinary query first, then join that result.
+- **`regional-sales` does not join with either SF dataset** — a different, unrelated
+  domain (abstract regions and products), no shared key.

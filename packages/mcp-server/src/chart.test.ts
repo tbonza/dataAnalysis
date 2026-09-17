@@ -31,6 +31,25 @@ describe("resolveChartType", () => {
     assert.equal(resolveChartType("interpretive dance"), "Scatter Plot");
     assert.equal(resolveChartType(undefined), "Scatter Plot");
   });
+
+  it("resolves every map alias to a template that exists", () => {
+    // These four once pointed at "World Map"/"US Map", names flint has never had. The
+    // alias was returned unchecked, so the failure surfaced downstream in assembly
+    // rather than here. flint has one bubble-map template; US vs world is its `region`.
+    for (const alias of ["map", "world_map", "us_map", "worldmap", "usmap"]) {
+      assert.equal(resolveChartType(alias), "Map", `${alias} should resolve to Map`);
+    }
+    assert.equal(resolveChartType("choropleth"), "Choropleth");
+  });
+
+  it("only follows an alias that names a real template", () => {
+    // The guard that would have caught the above: every alias must survive a registry
+    // lookup, so a typo falls back instead of being handed on to fail later.
+    const real = new Set(listChartTypes().map((t) => t.chartType));
+    for (const alias of ["bar", "map", "us_map", "choropleth", "point", "candlestick"]) {
+      assert.ok(real.has(resolveChartType(alias)), `${alias} resolved outside the registry`);
+    }
+  });
 });
 
 describe("listChartTypes", () => {

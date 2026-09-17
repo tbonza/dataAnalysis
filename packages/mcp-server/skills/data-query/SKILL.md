@@ -25,6 +25,8 @@ expressible as a small, checkable grammar, and a grammar cannot read your filesy
 or run for an hour by accident.
 
 The full field-by-field reference is in [references/query-spec.md](references/query-spec.md).
+For pairing two datasets by how close their coordinates are, see
+[references/spatial-join.md](references/spatial-join.md).
 Read it when you need the exact operator list or value shapes. What follows is enough
 for most questions.
 
@@ -104,8 +106,11 @@ Say so plainly rather than approximating:
 - **No clustering, no forecasting, no statistical modelling.** There is no code
   execution. If a question needs k-means or a projection, explain that and offer the
   descriptive version instead.
-- **No joins.** One dataset per query. If an answer needs two tables combined, say so;
-  loading a pre-joined table is the way through.
+- **No joins on a shared key.** One dataset per query, with one exception: `spatialJoin`
+  pairs rows from two datasets by how close their coordinates are — see
+  [references/spatial-join.md](references/spatial-join.md). There is no equi-join on a
+  common column. If an answer needs two tables matched on a key, group each one by that
+  key and compare the results, or load a pre-joined table.
 - **No arbitrary expressions.** `compute` is one arithmetic step over columns and
   numbers: `+ - * /`. No functions, no conditionals, no string manipulation. Two steps
   of arithmetic means two queries.

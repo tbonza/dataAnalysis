@@ -27,3 +27,10 @@ a region, and quarter-over-quarter trend within a region or product — `quarter
 ordered Q1..Q4 but carries no year, so trend means within-year seasonality, not
 year-over-year growth. There is no cost, margin, headcount, or pipeline column, so a
 question that needs one of those is out of scope for this dataset.
+
+## Joining with other datasets
+
+Does not join with `film-locations`, `mobile-food-permits`, or `registered-businesses` —
+`region` here is an abstract label (East/North/South/West), not a San Francisco
+neighborhood or supervisor district, and there is no other shared key. Treat this as a
+standalone dataset.

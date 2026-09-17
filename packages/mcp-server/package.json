@@ -10,6 +10,7 @@
     "cli": "tsx src/cli.ts",
     "build-catalog": "tsx src/buildCatalog.ts",
     "csv-to-parquet": "tsx src/csvToParquet.ts",
+    "preview-chart": "tsx src/previewChart.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts"
   },

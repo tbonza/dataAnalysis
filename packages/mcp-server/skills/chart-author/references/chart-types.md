@@ -42,8 +42,8 @@ condition is genuinely met, not for variety.
 | Bar Table | x, y, color, facet | Ranked table with inline bars, one row per category. y is the category, x the value |
 | KPI Card | metric, value, goal | "Big number" tiles, one row per tile. `value` must be pre-aggregated; `goal` optional |
 | Candlestick Chart | x, open, high, low, close, facet | OHLC financial data |
-| Map | longitude, latitude, color, size | Geographic points or bubbles. chartProperties: projection (`mercator`, `equalEarth`, `naturalEarth1`, `orthographic`, `albersUsa`), projectionCenter |
-| Choropleth | id, color, facet | Filled regions shaded by value. `id` is the region key, `color` the value. chartProperties: region (`world`, `usa`, …) |
+| Map | longitude, latitude, color, size | Geographic points or bubbles. Anything smaller than a country needs a restyle to zoom — see [maps.md](maps.md). |
+| Choropleth | id, color, detail | Filled regions shaded by value. `id` is the region key, `color` the value. US states and world countries only. chartProperties: region (`auto`, `us`, `world`) |
 | Calendar Heatmap | x, y, color | Daily values laid out as a calendar |
 | Sparkline | x, y | A tiny inline trend, no axes — for a table cell or a tile |
 
@@ -79,9 +79,10 @@ These are the ones that most often produce a wrong or empty chart.
 - **Bump / Slope Chart** — long-form, one row per (entity, x), `color` is the entity.
   A Slope Chart's x has exactly two categories.
 - **Violin Plot** — like a boxplot but showing the full shape; x category, y value.
-- **Map / Choropleth** — `Map` plots points via `longitude`/`latitude` (use projection
-  `albersUsa` for the US); `Choropleth` fills regions, with the region key on `id` and
-  the value on `color`, never on x/y.
+- **Map / Choropleth** — `Map` plots points via `longitude`/`latitude`, never x/y; a
+  map of anything smaller than a country renders as a dot until it is restyled, so read
+  [maps.md](maps.md) first. `Choropleth` fills regions, with the region key on `id` and
+  the value on `color`; it knows US states and world countries only.
 - **facet** — available on nearly every type. Use a low-cardinality categorical field.
 
 ## Statistical work

@@ -56,6 +56,15 @@ export const MCP_SERVER_VERSION = "1.0.0";
 export const MAX_RESULT_ROWS = 5000;
 
 /**
+ * Ceiling on `rowCount x otherRowCount` for a `spatialJoin`. A proximity join has no
+ * index to lean on, so it is a nested loop: the largest packaged dataset joined against
+ * a mid-sized one is ~800M comparisons, which would hang the server. This admits the
+ * pairings that finish in well under a second and refuses the rest with an actionable
+ * message rather than appearing to hang.
+ */
+export const MAX_SPATIAL_JOIN_PAIRS = 50_000_000;
+
+/**
  * Three separate row counts that happen to share a value. They are not the same
  * knob: tuning how many rows an agent inspects should not silently change how many
  * rows it is shown when restyling.
