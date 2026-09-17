@@ -5,3 +5,9 @@ dist
 
 # Built by `pnpm build-catalog` -- a build artifact, never hand-edited or committed.
 packages/mcp-server/data/
+
+# Data
+*.csv
+*.parquet
+*.jsonl
+*.tar.gz
